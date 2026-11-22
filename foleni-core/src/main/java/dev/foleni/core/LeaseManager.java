@@ -81,6 +81,7 @@ public final class LeaseManager {
                 finished_at  = CASE WHEN j.attempts >= j.max_attempts THEN now() ELSE NULL END,
                 run_at       = CASE WHEN j.attempts >= j.max_attempts THEN j.run_at ELSE now() END,
                 last_error   = 'lease expired: worker ' || j.locked_by || ' stopped heartbeating',
+                last_failed_at = now(),
                 locked_by    = NULL,
                 locked_until = NULL,
                 updated_at   = now()

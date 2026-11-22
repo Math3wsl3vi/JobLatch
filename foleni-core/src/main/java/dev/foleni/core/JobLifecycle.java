@@ -4,13 +4,14 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.Objects;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Moves a claimed job to its next state: succeeded, back to available (retry), or dead.
+ * Moves a claimed job to its next state: succeeded, back to available (retry later), or dead.
  *
  * <h2>Ownership check: the fencing token</h2>
  *
@@ -33,8 +34,13 @@ import org.slf4j.LoggerFactory;
  *
  * <p>A worker whose lease has expired may still complete or fail the job, as long as nobody has
  * claimed it again. The lease exists to allow recovery, and the fencing token tells us exactly
- * whether recovery has happened. Rejecting finished work only because a clock ticked past
- * {@code locked_until} would force a pointless rerun.
+ * whether recovery has happened.
+ *
+ * <h2>Retries</h2>
+ *
+ * <p>A failed job with attempts left is scheduled again at {@code now() + delay}, where the delay
+ * comes from the {@link RetryPolicy}. Java decides how long to wait. The database decides what
+ * time that is, so every worker uses the same clock.
  *
  * <p>This class is thread-safe.
  */
@@ -63,35 +69,54 @@ public final class JobLifecycle {
             """;
 
     /**
-     * Failure: one statement decides between retry and dead, so the decision and the write can
-     * never disagree.
+     * Failure: one statement decides between "retry later" and "dead", so the decision and the
+     * write can never disagree.
      *
-     * <p>{@code CASE WHEN ... THEN ... ELSE ... END} is SQL's if/else. On the right of
-     * {@code SET}, column names refer to the row's values before this update.
+     * <p>The {@code FROM (SELECT ?::boolean AS permanent, ?::bigint AS retry_delay_ms) AS p} part
+     * is a trick to give parameters names. JDBC parameters are positional {@code ?} marks, and we
+     * need "permanent" in three places. Selecting the parameters once into a one-row table
+     * {@code p} lets us write {@code p.permanent} as often as we like.
      *
-     * <p>Retry happens immediately ({@code run_at = now()}) for now. Milestone 5 adds backoff.
+     * <p>A job gives up (becomes dead) when it has used its last attempt OR the caller said the
+     * failure is permanent. Otherwise it becomes available again at {@code now() + delay}.
      */
     private static final String FAIL_SQL = """
-            UPDATE foleni_jobs
-            SET state        = CASE WHEN attempts >= max_attempts THEN 'dead' ELSE 'available' END,
-                finished_at  = CASE WHEN attempts >= max_attempts THEN now() ELSE NULL END,
-                run_at       = CASE WHEN attempts >= max_attempts THEN run_at ELSE now() END,
-                locked_by    = NULL,
-                locked_until = NULL,
-                last_error   = ?,
-                updated_at   = now()
-            WHERE id = ?
-              AND state = 'running'
-              AND locked_by = ?
-              AND attempts = ?
-            RETURNING state
+            UPDATE foleni_jobs AS j
+            SET state          = CASE WHEN j.attempts >= j.max_attempts OR p.permanent
+                                      THEN 'dead' ELSE 'available' END,
+                finished_at    = CASE WHEN j.attempts >= j.max_attempts OR p.permanent
+                                      THEN now() ELSE NULL END,
+                run_at         = CASE WHEN j.attempts >= j.max_attempts OR p.permanent
+                                      THEN j.run_at
+                                      ELSE now() + p.retry_delay_ms * interval '1 millisecond' END,
+                locked_by      = NULL,
+                locked_until   = NULL,
+                last_error     = ?,
+                last_failed_at = now(),
+                updated_at     = now()
+            FROM (SELECT ?::boolean AS permanent, ?::bigint AS retry_delay_ms) AS p
+            WHERE j.id = ?
+              AND j.state = 'running'
+              AND j.locked_by = ?
+              AND j.attempts = ?
+            RETURNING j.state
             """;
 
     private final DataSource dataSource;
+    private final RetryPolicy retryPolicy;
 
-    /** @param dataSource used by the methods that manage their own transaction */
+    /** Uses {@link RetryPolicy#defaults()}. */
     public JobLifecycle(DataSource dataSource) {
+        this(dataSource, RetryPolicy.defaults());
+    }
+
+    /**
+     * @param dataSource  used by the methods that manage their own transaction
+     * @param retryPolicy how long failed jobs wait before their next attempt
+     */
+    public JobLifecycle(DataSource dataSource, RetryPolicy retryPolicy) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
+        this.retryPolicy = Objects.requireNonNull(retryPolicy, "retryPolicy");
     }
 
     /**
@@ -140,8 +165,8 @@ public final class JobLifecycle {
     }
 
     /**
-     * Records a failed attempt, in its own transaction. If attempts remain, the job becomes
-     * available again. Otherwise it becomes dead and is kept for inspection.
+     * Records a failed attempt that is worth retrying (a timeout, an unavailable service...). If
+     * attempts remain, the job runs again after a backoff delay. Otherwise it becomes dead.
      *
      * @param errorMessage a short description of what went wrong. It is stored in the database
      *     (truncated to {@link #MAX_ERROR_LENGTH}) and never logged by Foleni. Still, do not put
@@ -150,19 +175,32 @@ public final class JobLifecycle {
      *     TransitionResult#NOT_OWNER}
      */
     public TransitionResult fail(ClaimedJob job, String errorMessage) throws SQLException {
+        return recordFailure(job, errorMessage, false);
+    }
+
+    /**
+     * Records a failure that retrying cannot fix (invalid payload, missing customer...). The job
+     * becomes dead immediately, whatever attempts it has left, and waits there for a person.
+     *
+     * @return {@link TransitionResult#DEAD} or {@link TransitionResult#NOT_OWNER}
+     */
+    public TransitionResult failPermanently(ClaimedJob job, String errorMessage) throws SQLException {
+        return recordFailure(job, errorMessage, true);
+    }
+
+    private TransitionResult recordFailure(ClaimedJob job, String errorMessage, boolean permanent)
+            throws SQLException {
         Objects.requireNonNull(job, "job");
         Objects.requireNonNull(errorMessage, "errorMessage");
-        // Postgres text columns cannot hold the NUL character (code 0). An exception message
-        // containing one would make the UPDATE itself fail, and the failure would go unrecorded.
-        String cleaned = errorMessage.replace('\0', ' ');
-        String stored = cleaned.length() > MAX_ERROR_LENGTH
-                ? cleaned.substring(0, MAX_ERROR_LENGTH)
-                : cleaned;
+        String stored = cleanError(errorMessage);
+        // Computed even when it will not be used (last attempt or permanent): it is cheap, and
+        // it keeps the SQL to a single statement.
+        Duration delay = retryPolicy.delayAfter(job.attempts());
 
         try (Connection conn = dataSource.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                TransitionResult result = runFail(conn, job, stored);
+                TransitionResult result = runFail(conn, job, stored, permanent, delay);
                 conn.commit();
                 return result;
             } catch (SQLException | RuntimeException e) {
@@ -170,6 +208,16 @@ public final class JobLifecycle {
                 throw e;
             }
         }
+    }
+
+    /**
+     * Postgres text columns cannot hold the NUL character (code 0). An exception message
+     * containing one would make the UPDATE itself fail, and the failure would go unrecorded. Long
+     * messages are cut to {@link #MAX_ERROR_LENGTH}.
+     */
+    private static String cleanError(String errorMessage) {
+        String cleaned = errorMessage.replace('\0', ' ');
+        return cleaned.length() > MAX_ERROR_LENGTH ? cleaned.substring(0, MAX_ERROR_LENGTH) : cleaned;
     }
 
     private static TransitionResult runComplete(Connection conn, ClaimedJob job) throws SQLException {
@@ -189,27 +237,32 @@ public final class JobLifecycle {
         }
     }
 
-    private static TransitionResult runFail(Connection conn, ClaimedJob job, String error)
+    private static TransitionResult runFail(
+            Connection conn, ClaimedJob job, String error, boolean permanent, Duration delay)
             throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(FAIL_SQL)) {
-            ps.setString(1, error);
-            ps.setObject(2, job.id());
-            ps.setString(3, job.lockedBy());
-            ps.setInt(4, job.attempts());
+            // Parameters are numbered in the order the ? marks appear in the SQL text.
+            ps.setString(1, error);           // last_error = ?
+            ps.setBoolean(2, permanent);      // ?::boolean AS permanent
+            ps.setLong(3, delay.toMillis());  // ?::bigint AS retry_delay_ms
+            ps.setObject(4, job.id());        // j.id = ?
+            ps.setString(5, job.lockedBy());  // j.locked_by = ?
+            ps.setInt(6, job.attempts());     // j.attempts = ?
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) { // no row returned = WHERE did not match = not the owner
                     log.info("Job {} not failed: worker {} no longer owns attempt {}",
                             job.id(), job.lockedBy(), job.attempts());
                     return TransitionResult.NOT_OWNER;
                 }
-                String newState = rs.getString("state");
-                if ("dead".equals(newState)) {
+                if ("dead".equals(rs.getString(1))) {
                     // WARN: a person may need to look at this job. The error text stays in the
                     // database, not in the log line.
-                    log.warn("Job {} is dead after {} attempt(s)", job.id(), job.attempts());
+                    log.warn("Job {} is dead after {} attempt(s){}", job.id(), job.attempts(),
+                            permanent ? " (permanent failure)" : "");
                     return TransitionResult.DEAD;
                 }
-                log.debug("Job {} failed attempt {}, will retry", job.id(), job.attempts());
+                log.debug("Job {} failed attempt {}, retrying in {} ms",
+                        job.id(), job.attempts(), delay.toMillis());
                 return TransitionResult.RETRY_SCHEDULED;
             }
         }

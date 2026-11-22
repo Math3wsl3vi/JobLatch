@@ -274,9 +274,12 @@ class JobQueueTest {
 
     @Test
     void migrationsAreSafeToRunTwice() throws SQLException {
-        FoleniMigrations.migrate(dataSource); // already ran in @BeforeAll
+        long appliedBefore = count("foleni_schema_history"); // migrate() already ran in @BeforeAll
 
-        assertThat(count("foleni_schema_history")).isEqualTo(1);
+        FoleniMigrations.migrate(dataSource);
+
+        assertThat(appliedBefore).isPositive();
+        assertThat(count("foleni_schema_history")).isEqualTo(appliedBefore); // nothing re-applied
     }
 
     // ---------------------------------------------------------------- helpers

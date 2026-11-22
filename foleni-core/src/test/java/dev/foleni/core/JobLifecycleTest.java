@@ -64,7 +64,8 @@ class JobLifecycleTest {
     void reset() throws SQLException {
         execute("TRUNCATE foleni_jobs, invoices");
         claimer = new JobClaimer(dataSource);
-        lifecycle = new JobLifecycle(dataSource);
+        // No backoff here: these tests check ownership, and re-claim a failed job straight away.
+        lifecycle = new JobLifecycle(dataSource, RetryPolicy.noDelay());
     }
 
     // ---------------------------------------------------------------- complete
