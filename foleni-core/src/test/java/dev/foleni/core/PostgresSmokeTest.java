@@ -1,4 +1,4 @@
-package dev.pgqueue.core;
+package dev.foleni.core;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

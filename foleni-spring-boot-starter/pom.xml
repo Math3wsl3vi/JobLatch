@@ -5,14 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>dev.pgqueue</groupId>
-        <artifactId>pgqueue-parent</artifactId>
+        <groupId>dev.foleni</groupId>
+        <artifactId>foleni-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>pgqueue-spring-boot-starter</artifactId>
-    <name>pgqueue-spring-boot-starter</name>
-    <description>Spring Boot auto-configuration for pgqueue. Placeholder: not implemented yet.</description>
+    <artifactId>foleni-spring-boot-starter</artifactId>
+    <name>foleni-spring-boot-starter</name>
+    <description>Spring Boot auto-configuration for foleni. Placeholder: not implemented yet.</description>
 
     <!-- Intentionally empty. Spring Boot dependencies will be added when the starter is built. -->
 </project>

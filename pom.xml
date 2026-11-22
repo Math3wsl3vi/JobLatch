@@ -4,12 +4,12 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>dev.pgqueue</groupId>
-    <artifactId>pgqueue-parent</artifactId>
+    <groupId>dev.foleni</groupId>
+    <artifactId>foleni-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>pgqueue</name>
+    <name>foleni</name>
     <description>A Postgres-backed job queue library.</description>
 
     <licenses>
@@ -21,9 +21,9 @@
     </licenses>
 
     <modules>
-        <module>pgqueue-core</module>
-        <module>pgqueue-spring-boot-starter</module>
-        <module>pgqueue-demo</module>
+        <module>foleni-core</module>
+        <module>foleni-spring-boot-starter</module>
+        <module>foleni-demo</module>
     </modules>
 
     <properties>
@@ -61,8 +61,8 @@
         <dependencies>
             <!-- Internal modules -->
             <dependency>
-                <groupId>dev.pgqueue</groupId>
-                <artifactId>pgqueue-core</artifactId>
+                <groupId>dev.foleni</groupId>
+                <artifactId>foleni-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
 

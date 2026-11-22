@@ -5,14 +5,14 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>dev.pgqueue</groupId>
-        <artifactId>pgqueue-parent</artifactId>
+        <groupId>dev.foleni</groupId>
+        <artifactId>foleni-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>pgqueue-demo</artifactId>
-    <name>pgqueue-demo</name>
-    <description>Demo application using pgqueue-core.</description>
+    <artifactId>foleni-demo</artifactId>
+    <name>foleni-demo</name>
+    <description>Demo application using foleni-core.</description>
 
     <properties>
         <!-- Demo app is never published. -->
@@ -21,8 +21,8 @@
 
     <dependencies>
         <dependency>
-            <groupId>dev.pgqueue</groupId>
-            <artifactId>pgqueue-core</artifactId>
+            <groupId>dev.foleni</groupId>
+            <artifactId>foleni-core</artifactId>
         </dependency>
     </dependencies>
 </project>
