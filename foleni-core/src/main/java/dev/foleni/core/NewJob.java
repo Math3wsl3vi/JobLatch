@@ -2,7 +2,6 @@ package dev.foleni.core;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.regex.Pattern;
 
 /**
  * A job that has not been saved yet: what the application wants to run.
@@ -32,8 +31,7 @@ public record NewJob(
         int priority,
         int maxAttempts) {
 
-    /** Same rule as the {@code CHECK} constraints in {@code V1__create_jobs.sql}. Keep them in sync. */
-    private static final Pattern NAME_PATTERN = Pattern.compile("[A-Za-z0-9_.:-]{1,128}");
+
 
     /** Default number of attempts. Retries arrive in Milestone 5. */
     public static final int DEFAULT_MAX_ATTEMPTS = 5;
@@ -52,8 +50,8 @@ public record NewJob(
      * validate. If any check throws, the object is never created.
      */
     public NewJob {
-        requireName("queue", queue);
-        requireName("jobType", jobType);
+        Names.requireValid("queue", queue);
+        Names.requireValid("jobType", jobType);
 
         if (payloadJson == null || payloadJson.isBlank()) {
             throw new IllegalArgumentException("payloadJson must not be null or blank");
@@ -107,11 +105,4 @@ public record NewJob(
                 + ", payload=<redacted>]";
     }
 
-    private static void requireName(String field, String value) {
-        if (value == null || !NAME_PATTERN.matcher(value).matches()) {
-            // Safe to include the value? Not before it is validated: it could be anything.
-            throw new IllegalArgumentException(
-                    field + " must be 1-128 characters of A-Z a-z 0-9 _ . : -");
-        }
-    }
 }
