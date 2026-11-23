@@ -10,7 +10,14 @@
     <packaging>pom</packaging>
 
     <name>foleni</name>
-    <description>A Postgres-backed job queue library.</description>
+    <description>A durable job queue for Java on PostgreSQL alone: transactional enqueue, SKIP LOCKED claiming, leases, retries and LISTEN/NOTIFY.</description>
+    <!--
+      Maven Central requires url, licenses, developers and scm. Children inherit them.
+      child.*.inherit.append.path="false": without it Maven appends each module's artifactId to
+      these URLs (".../foleni/foleni-core"), which points nowhere in a single repository.
+    -->
+    <url child.project.url.inherit.append.path="false">https://github.com/Math3wsl3vi/foleni</url>
+    <inceptionYear>2026</inceptionYear>
 
     <licenses>
         <license>
@@ -19,6 +26,28 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+
+    <developers>
+        <developer>
+            <id>Math3wsl3vi</id>
+            <name>Math3wsl3vi</name>
+            <url>https://github.com/Math3wsl3vi</url>
+        </developer>
+    </developers>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/Math3wsl3vi/foleni.git</connection>
+        <developerConnection>scm:git:https://github.com/Math3wsl3vi/foleni.git</developerConnection>
+        <url>https://github.com/Math3wsl3vi/foleni</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/Math3wsl3vi/foleni/issues</url>
+    </issueManagement>
 
     <modules>
         <module>foleni-core</module>
@@ -61,6 +90,12 @@
         <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
         <maven-wrapper-plugin.version>3.3.4</maven-wrapper-plugin.version>
         <exec-maven-plugin.version>3.7.0</exec-maven-plugin.version>
+
+        <!-- Release plugins (used by the "release" profile) -->
+        <maven-source-plugin.version>3.4.0</maven-source-plugin.version>
+        <maven-javadoc-plugin.version>3.12.0</maven-javadoc-plugin.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <central-publishing-maven-plugin.version>0.12.0</central-publishing-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -188,6 +223,26 @@
                     <artifactId>exec-maven-plugin</artifactId>
                     <version>${exec-maven-plugin.version}</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>${maven-source-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven-javadoc-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-gpg-plugin</artifactId>
+                    <version>${maven-gpg-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.sonatype.central</groupId>
+                    <artifactId>central-publishing-maven-plugin</artifactId>
+                    <version>${central-publishing-maven-plugin.version}</version>
+                </plugin>
             </plugins>
         </pluginManagement>
 
@@ -219,4 +274,92 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!--
+          Release to Maven Central:   ./mvnw -Prelease clean deploy
+          Dry run, nothing uploaded:  ./mvnw -Prelease clean deploy -DskipUpload=true -Dgpg.skip=true
+          See docs/release.md for the full checklist (signing key, Central token, namespace).
+        -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <!-- Central requires a -sources.jar and a -javadoc.jar next to every jar. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <!--
+                              Every check except "missing": broken links, bad HTML and syntax still
+                              fail the build. Every public type and method has a description, but not
+                              every parameter repeats itself as an @param tag.
+                            -->
+                            <doclint>all,-missing</doclint>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!--
+                      Central requires a GPG signature (.asc) for every file. The passphrase comes
+                      from the MAVEN_GPG_PASSPHRASE environment variable, never from this file.
+                    -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>sign</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!--
+                      Uploads to the Central Portal (central.sonatype.com). Replaces maven-deploy-plugin.
+                      Credentials: a <server> with id "central" in ~/.m2/settings.xml (a Portal user token).
+                      autoPublish=false: the upload is validated, then waits for a human to press
+                      "Publish" in the Portal. A release to Central can never be deleted.
+                    -->
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                            <waitUntil>VALIDATED</waitUntil>
+                            <!-- Only foleni-parent and foleni-core are published. -->
+                            <excludeArtifacts>
+                                <artifact>foleni-crash-test</artifact>
+                                <artifact>foleni-benchmarks</artifact>
+                                <artifact>foleni-spring-boot-starter</artifact>
+                                <artifact>foleni-demo</artifact>
+                            </excludeArtifacts>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
