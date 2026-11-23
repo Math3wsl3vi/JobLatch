@@ -13,7 +13,7 @@ Not yet on Maven Central. Once released:
 
 ```xml
 <dependency>
-    <groupId>dev.joblatch</groupId>
+    <groupId>io.github.math3wsl3vi</groupId>
     <artifactId>joblatch-core</artifactId>
     <version>0.1.0</version>
 </dependency>
