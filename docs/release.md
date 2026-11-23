@@ -53,12 +53,29 @@ application without needing changes.
      repository once verified. Or email Central Support (see
      [central.sonatype.org/register/namespace](https://central.sonatype.org/register/namespace/)).
    - A `groupId` can never be changed for versions already published.
-3. **Signing key.** Central requires every file to be signed:
+3. **Signing key.** Central requires every file to be signed.
    ```bash
-   gpg --quick-gen-key "Your Name <you@example.com>" ed25519 sign 2y
-   gpg --keyserver keyserver.ubuntu.com --send-keys <KEY_ID>
+   # macOS: a password dialog, so gpg can ask for the passphrase when Maven runs it
+   brew install pinentry-mac
+   echo "pinentry-program $(brew --prefix)/bin/pinentry-mac" >> ~/.gnupg/gpg-agent.conf
+   gpgconf --kill gpg-agent
+
+   # One RSA 4096 primary key that signs by itself, expiring in 2 years
+   gpg --quick-gen-key "Your Name <you@example.com>" rsa4096 sign 2y
+
+   # Publish the PUBLIC key (permanent), then click the email link keys.openpgp.org sends
+   gpg --keyserver keyserver.ubuntu.com --send-keys <FINGERPRINT>
+   gpg --keyserver keys.openpgp.org --send-keys <FINGERPRINT>
    ```
-   Back up the key and its revocation certificate somewhere safe and offline.
+   - **RSA, no signing subkey.** Central's GPG guide says Maven can only verify against a *primary*
+     key, so a signing subkey (what `gpg --gen-key` creates by default) causes failed checks. Its
+     guide also never states which algorithms are accepted; all its examples use RSA.
+   - The name and email on the key are public permanently: anyone verifying a download sees them.
+   - Back up the secret key (`gpg --armor --export-secret-keys <FINGERPRINT>`) and the revocation
+     certificate (`~/.gnupg/openpgp-revocs.d/<FINGERPRINT>.rev`) offline, never inside the
+     repository (`.gitignore` does not exclude `.asc` files).
+   - Before a release, check the key downloads from a keyserver Central supports
+     (keyserver.ubuntu.com, keys.openpgp.org, pgp.mit.edu).
 4. **Portal token** (Account → Generate User Token) in `~/.m2/settings.xml`, never in the repository:
    ```xml
    <settings>
@@ -128,9 +145,11 @@ The upload is validated by Central and then **waits** (`autoPublish=false`).
 
 ## What was verified, and what was not
 
-On 2026-11-23 the release profile was run with a release version (`0.1.0`) and
-`-DskipUpload=true -Dgpg.skip=true`. The bundle contained exactly `joblatch-parent` and `joblatch-core`
-(jar, sources, Javadoc, POM, with md5/sha1/sha256/sha512 checksums), and the published POMs carried
-the required name, description, URL, licence, developer and SCM metadata. **Not yet exercised:**
-GPG signing, Central's validation, and publishing. The first real release will be the first test
-of those.
+On 2026-11-23, with the namespace `io.github.math3wsl3vi` verified in the Portal, the release
+profile was run with a release version (`0.1.0`) and `-DskipUpload=true`, signing with the real key
+(RSA 4096, fingerprint `BB97BA3977125E7C957404521A5AA7892DF3B8E1`). The bundle contained exactly
+`joblatch-parent` and `joblatch-core` (jar, sources, Javadoc, POM, with checksums), every one of
+the 5 files had a `.asc` signature that `gpg --verify` reported as good, and the POMs carried the
+required metadata. The public key was downloadable from keys.openpgp.org with its identity;
+keyserver.ubuntu.com listed it but did not yet serve it for download. **Not yet exercised:**
+Central's own validation, and publishing. The first real release will be the first test of those.
