@@ -115,31 +115,25 @@ public final class LeaseManager {
             throw new IllegalArgumentException("leaseDuration must be at least 1 millisecond");
         }
 
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                Optional<Instant> newExpiry;
-                try (PreparedStatement ps = conn.prepareStatement(RENEW_SQL)) {
-                    ps.setLong(1, leaseDuration.toMillis());
-                    ps.setObject(2, job.id());
-                    ps.setString(3, job.lockedBy());
-                    ps.setInt(4, job.attempts());
-                    try (ResultSet rs = ps.executeQuery()) {
-                        newExpiry = rs.next()
-                                ? Optional.of(rs.getObject(1, OffsetDateTime.class).toInstant())
-                                : Optional.empty();
-                    }
-                }
-                conn.commit();
-                if (newExpiry.isEmpty()) {
-                    log.info("Lease on job {} not renewed: worker {} no longer owns attempt {}",
-                            job.id(), job.lockedBy(), job.attempts());
-                }
-                return newExpiry;
-            } catch (SQLException | RuntimeException e) {
-                rollbackQuietly(conn, e);
-                throw e;
+        // One UPDATE in auto-commit mode: its own transaction, no BEGIN/COMMIT round trips.
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(RENEW_SQL)) {
+            conn.setAutoCommit(true); // pools may hand out connections with it off
+            ps.setLong(1, leaseDuration.toMillis());
+            ps.setObject(2, job.id());
+            ps.setString(3, job.lockedBy());
+            ps.setInt(4, job.attempts());
+            Optional<Instant> newExpiry;
+            try (ResultSet rs = ps.executeQuery()) {
+                newExpiry = rs.next()
+                        ? Optional.of(rs.getObject(1, OffsetDateTime.class).toInstant())
+                        : Optional.empty();
             }
+            if (newExpiry.isEmpty()) {
+                log.info("Lease on job {} not renewed: worker {} no longer owns attempt {}",
+                        job.id(), job.lockedBy(), job.attempts());
+            }
+            return newExpiry;
         }
     }
 
@@ -158,43 +152,29 @@ public final class LeaseManager {
                     "maxJobs must be between 1 and " + MAX_RECLAIM_BATCH + ", was " + maxJobs);
         }
 
-        try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                int requeued = 0;
-                int dead = 0;
-                try (PreparedStatement ps = conn.prepareStatement(RECLAIM_SQL)) {
-                    ps.setInt(1, maxJobs);
-                    try (ResultSet rs = ps.executeQuery()) {
-                        while (rs.next()) {
-                            if ("dead".equals(rs.getString(1))) {
-                                dead++;
-                            } else {
-                                requeued++;
-                            }
-                        }
+        // One statement (the CTE and its UPDATE) in auto-commit mode: one transaction.
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(RECLAIM_SQL)) {
+            conn.setAutoCommit(true); // pools may hand out connections with it off
+            ps.setInt(1, maxJobs);
+            int requeued = 0;
+            int dead = 0;
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    if ("dead".equals(rs.getString(1))) {
+                        dead++;
+                    } else {
+                        requeued++;
                     }
                 }
-                conn.commit();
-                ReclaimResult result = new ReclaimResult(requeued, dead);
-                if (result.total() > 0) {
-                    // WARN: expired leases mean workers crashed or stalled. Operators should know.
-                    log.warn("Reclaimed {} job(s) with expired leases ({} requeued, {} dead)",
-                            result.total(), requeued, dead);
-                }
-                return result;
-            } catch (SQLException | RuntimeException e) {
-                rollbackQuietly(conn, e);
-                throw e;
             }
-        }
-    }
-
-    private static void rollbackQuietly(Connection conn, Exception original) {
-        try {
-            conn.rollback();
-        } catch (SQLException rollbackFailure) {
-            original.addSuppressed(rollbackFailure);
+            ReclaimResult result = new ReclaimResult(requeued, dead);
+            if (result.total() > 0) {
+                // WARN: expired leases mean workers crashed or stalled. Operators should know.
+                log.warn("Reclaimed {} job(s) with expired leases ({} requeued, {} dead)",
+                        result.total(), requeued, dead);
+            }
+            return result;
         }
     }
 }

@@ -127,16 +127,10 @@ public final class JobLifecycle {
      */
     public TransitionResult complete(ClaimedJob job) throws SQLException {
         Objects.requireNonNull(job, "job");
+        // One UPDATE in auto-commit mode: its own transaction, no BEGIN/COMMIT round trips.
         try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                TransitionResult result = runComplete(conn, job);
-                conn.commit();
-                return result;
-            } catch (SQLException | RuntimeException e) {
-                rollbackQuietly(conn, e);
-                throw e;
-            }
+            conn.setAutoCommit(true); // pools may hand out connections with it off
+            return runComplete(conn, job);
         }
     }
 
@@ -197,16 +191,10 @@ public final class JobLifecycle {
         // it keeps the SQL to a single statement.
         Duration delay = retryPolicy.delayAfter(job.attempts());
 
+        // One UPDATE in auto-commit mode: its own transaction, no BEGIN/COMMIT round trips.
         try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                TransitionResult result = runFail(conn, job, stored, permanent, delay);
-                conn.commit();
-                return result;
-            } catch (SQLException | RuntimeException e) {
-                rollbackQuietly(conn, e);
-                throw e;
-            }
+            conn.setAutoCommit(true); // pools may hand out connections with it off
+            return runFail(conn, job, stored, permanent, delay);
         }
     }
 
@@ -265,14 +253,6 @@ public final class JobLifecycle {
                         job.id(), job.attempts(), delay.toMillis());
                 return TransitionResult.RETRY_SCHEDULED;
             }
-        }
-    }
-
-    private static void rollbackQuietly(Connection conn, Exception original) {
-        try {
-            conn.rollback();
-        } catch (SQLException rollbackFailure) {
-            original.addSuppressed(rollbackFailure);
         }
     }
 }
