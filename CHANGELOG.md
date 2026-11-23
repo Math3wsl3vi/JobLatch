@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Foleni are recorded here. The format follows
+All notable changes to JobLatch are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org) as described in [docs/release.md](docs/release.md).
 
@@ -26,7 +26,7 @@ First release candidate: 0.1.0.
   (`WorkerPool`, `WorkerPoolConfig`, `JobHandler`).
 - LISTEN/NOTIFY wake-ups with polling as the fallback, automatic reconnection and health checks
   (`JobNotificationListener`); scheduled jobs that run on time on the database's clock.
-- Database migrations V1–V3 (`FoleniMigrations`).
+- Database migrations V1–V3 (`JobLatchMigrations`).
 - Least-privilege role scripts, monitoring and retention SQL (`docs/sql/`), verified by tests.
 - Multi-process crash tests, benchmarks against db-scheduler, a runnable demo and Docker Compose
   setup for local development.
@@ -35,5 +35,5 @@ First release candidate: 0.1.0.
 
 ### Tables
 
-- Adds `foleni_jobs` and `foleni_schema_history`. Run `docs/sql/02-grant-privileges.sql` after
+- Adds `joblatch_jobs` and `joblatch_schema_history`. Run `docs/sql/02-grant-privileges.sql` after
   migrating.

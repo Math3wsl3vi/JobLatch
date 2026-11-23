@@ -1,7 +1,7 @@
 # Releasing
 
-How Foleni is versioned and published to Maven Central. Only `foleni-parent` (the parent POM) and
-`foleni-core` are published; the other modules are excluded in the `release` profile.
+How JobLatch is versioned and published to Maven Central. Only `joblatch-parent` (the parent POM) and
+`joblatch-core` are published; the other modules are excluded in the `release` profile.
 
 ## Semantic versioning
 
@@ -9,9 +9,9 @@ Versions follow [Semantic Versioning 2.0.0](https://semver.org): `MAJOR.MINOR.PA
 
 **The public contract has three parts**, and a breaking change to any of them is a breaking change:
 
-1. **Java API:** public types and members in `dev.foleni.core`, as documented in [api.md](api.md).
+1. **Java API:** public types and members in `dev.joblatch.core`, as documented in [api.md](api.md).
    Package-private members are not part of it.
-2. **Database schema:** the `foleni_jobs` columns listed as stable in
+2. **Database schema:** the `joblatch_jobs` columns listed as stable in
    [schema.md](schema.md#which-columns-may-your-sql-rely-on), and the role/privilege model in
    [security.md](security.md).
 3. **Guarantees:** at-least-once delivery, transactional enqueue, fencing, and the behaviours in
@@ -39,8 +39,8 @@ application without needing changes.
 ## One-time setup
 
 1. **Central Portal account** at [central.sonatype.com](https://central.sonatype.com).
-2. **Namespace.** Central only accepts a `groupId` you can prove you control. `dev.foleni` requires
-   control of the domain **foleni.dev** (verified with a DNS TXT record). If you do not own it,
+2. **Namespace.** Central only accepts a `groupId` you can prove you control. `dev.joblatch` requires
+   control of the domain **joblatch.dev** (verified with a DNS TXT record). If you do not own it,
    either register it or change the `groupId` in every POM to the namespace Central gives a GitHub
    account (`io.github.<username>`), and update the docs. **Decide this before the first release:**
    a `groupId` cannot be changed for versions already published.
@@ -90,7 +90,7 @@ git commit -am "Release X.Y.Z"
 # Dry run: builds the exact bundle Central would receive, uploads nothing
 ./mvnw -Prelease clean deploy -DskipUpload=true
 unzip -l target/central-publishing/central-bundle.zip
-#   expect: foleni-parent .pom, foleni-core .jar/-sources.jar/-javadoc.jar/.pom,
+#   expect: joblatch-parent .pom, joblatch-core .jar/-sources.jar/-javadoc.jar/.pom,
 #   each with .asc and checksum files, and NOTHING from the other modules
 
 # Real upload (prompts for the GPG passphrase, or set MAVEN_GPG_PASSPHRASE)
@@ -104,7 +104,7 @@ The upload is validated by Central and then **waits** (`autoPublish=false`).
 
 - [ ] In the Portal (Deployments), check the validation result and the file list.
 - [ ] Press **Publish**. A release on Maven Central is permanent: it cannot be changed or deleted.
-- [ ] Tag and push: `git tag -s vX.Y.Z -m "Foleni X.Y.Z" && git push origin vX.Y.Z`
+- [ ] Tag and push: `git tag -s vX.Y.Z -m "JobLatch X.Y.Z" && git push origin vX.Y.Z`
 - [ ] Create a GitHub release from the tag with the changelog section.
 
 **After**
@@ -114,12 +114,12 @@ The upload is validated by Central and then **waits** (`autoPublish=false`).
       and commit.
 - [ ] Add an empty "Unreleased" section to `CHANGELOG.md`.
 - [ ] Within a few hours, check the artifact resolves:
-      `https://repo1.maven.org/maven2/dev/foleni/foleni-core/X.Y.Z/`.
+      `https://repo1.maven.org/maven2/dev/joblatch/joblatch-core/X.Y.Z/`.
 
 ## What was verified, and what was not
 
 On 2026-11-23 the release profile was run with a release version (`0.1.0`) and
-`-DskipUpload=true -Dgpg.skip=true`. The bundle contained exactly `foleni-parent` and `foleni-core`
+`-DskipUpload=true -Dgpg.skip=true`. The bundle contained exactly `joblatch-parent` and `joblatch-core`
 (jar, sources, Javadoc, POM, with md5/sha1/sha256/sha512 checksums), and the published POMs carried
 the required name, description, URL, licence, developer and SCM metadata. **Not yet exercised:**
 GPG signing, Central's validation, and publishing. The first real release will be the first test

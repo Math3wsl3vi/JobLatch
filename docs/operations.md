@@ -1,13 +1,13 @@
 # Operations guide
 
-Running Foleni in production: deploying, sizing, monitoring and maintenance. For incidents see
+Running JobLatch in production: deploying, sizing, monitoring and maintenance. For incidents see
 [failure-recovery.md](failure-recovery.md); for roles and data handling see [security.md](security.md).
 
 ## Requirements
 
 - PostgreSQL 18 or later (the schema uses the built-in `uuidv7()`).
 - Java 21 or later.
-- A connection pool such as HikariCP. Foleni opens and returns connections constantly; without a
+- A connection pool such as HikariCP. JobLatch opens and returns connections constantly; without a
   pool, every claim and completion pays for a new TCP connection and login.
 - For LISTEN/NOTIFY: direct connections or PgBouncer in **session** mode. In transaction mode, turn
   notifications off ([configuration.md](configuration.md#turning-notifications-off)).
@@ -15,12 +15,12 @@ Running Foleni in production: deploying, sizing, monitoring and maintenance. For
 ## Deploying
 
 1. **Roles, once per database.** Apply `docs/sql/01-create-roles.sql` ([security.md](security.md)).
-2. **Migrations, every deploy, before the application starts.** Run `FoleniMigrations.migrate` with
-   the `foleni_owner` credentials (a deploy step, init container or one-off job). It is idempotent and
+2. **Migrations, every deploy, before the application starts.** Run `JobLatchMigrations.migrate` with
+   the `joblatch_owner` credentials (a deploy step, init container or one-off job). It is idempotent and
    safe to run from several places at once.
 3. **Grants, after migrations that add tables.** Apply `docs/sql/02-grant-privileges.sql` as
-   `foleni_owner`. Release notes say when this is needed.
-4. **Application**, with a login role that holds `foleni_runtime`. In every worker process start one
+   `joblatch_owner`. Release notes say when this is needed.
+4. **Application**, with a login role that holds `joblatch_runtime`. In every worker process start one
    `WorkerPool` per queue **and one `LeaseReaper`**, and close them on shutdown.
 
 ### Shutdown and Kubernetes
@@ -47,7 +47,7 @@ the rollout takes longer than a job's retries last, give such jobs a higher `max
 | Worker threads per pool | Match the work: for I/O-bound handlers, more threads than cores is normal. Each thread can hold a database connection. |
 | Connections | See [configuration.md](configuration.md#connection-pool-sizing). Sum over all processes must fit `max_connections`. |
 | Queues | Separate queues for work with different urgency or failure behaviour, so a slow job type cannot starve a fast one. Each queue needs its own pool. |
-| Throughput | Measured on a laptop, Foleni drained roughly 1,500 jobs/s with one thread and 8,000–10,000 jobs/s with 16–32 threads, with no-op handlers ([benchmarks.md](benchmarks.md)). Real handlers will be the limit long before that. Measure your own. |
+| Throughput | Measured on a laptop, JobLatch drained roughly 1,500 jobs/s with one thread and 8,000–10,000 jobs/s with 16–32 threads, with no-op handlers ([benchmarks.md](benchmarks.md)). Real handlers will be the limit long before that. Measure your own. |
 
 ## Monitoring
 
@@ -70,20 +70,20 @@ database trouble.
 
 ### Retention
 
-Foleni never deletes jobs. Finished jobs stay as rows: useful for inspection, but the table grows.
+JobLatch never deletes jobs. Finished jobs stay as rows: useful for inspection, but the table grows.
 Schedule [`docs/sql/03-retention.sql`](sql/03-retention.sql) (for example hourly), run as a role
-holding `foleni_maintenance`, repeated until it deletes 0 rows. It deletes `succeeded` jobs older than
+holding `joblatch_maintenance`, repeated until it deletes 0 rows. It deletes `succeeded` jobs older than
 7 days in batches of 1,000, so it never blocks workers for long. Dead jobs are kept until someone
 deals with them.
 
 ### VACUUM and bloat
 
-Every job is written several times (insert, claim, completion), so `foleni_jobs` produces dead row
+Every job is written several times (insert, claim, completion), so `joblatch_jobs` produces dead row
 versions quickly. Autovacuum handles this by default. On busy systems consider per-table settings so
 it runs more often, for example:
 
 ```sql
-ALTER TABLE foleni_jobs SET (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.02);
+ALTER TABLE joblatch_jobs SET (autovacuum_vacuum_scale_factor = 0.02, autovacuum_analyze_scale_factor = 0.02);
 ```
 
 Long-running transactions anywhere in the database stop VACUUM from cleaning up; keep them short.
@@ -92,9 +92,9 @@ Long-running transactions anywhere in the database stop VACUUM from cleaning up;
 
 List them with `DeadLetterQueue.list(queue, limit)` or monitoring query #4. Fix the cause, then
 `DeadLetterQueue.requeue(id)`: the job becomes available with a fresh set of attempts. Delete dead
-jobs you will never retry with a `DELETE … WHERE state = 'dead' AND id = …` as `foleni_maintenance`.
+jobs you will never retry with a `DELETE … WHERE state = 'dead' AND id = …` as `joblatch_maintenance`.
 
-### Upgrading Foleni
+### Upgrading JobLatch
 
 Read the changelog. Run the new version's migrations before (or while) starting the new
 application version: migrations are designed to be compatible with the previous release's code
@@ -103,6 +103,6 @@ reversible.
 
 ### Backups
 
-`foleni_jobs` is ordinary data: it is in your normal database backups. After restoring an old
+`joblatch_jobs` is ordinary data: it is in your normal database backups. After restoring an old
 backup, jobs that had already succeeded may be `available` or `running` again and will run again.
 Idempotent handlers make that safe.

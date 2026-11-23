@@ -1,6 +1,6 @@
 # Architecture
 
-How Foleni works, and why it is built this way. For the exact columns and indexes see
+How JobLatch works, and why it is built this way. For the exact columns and indexes see
 [schema.md](schema.md); for the classes see [api.md](api.md).
 
 ## The big picture
@@ -8,7 +8,7 @@ How Foleni works, and why it is built this way. For the exact columns and indexe
 ```
  your application                    PostgreSQL                         worker process(es)
 ┌───────────────────┐   INSERT in   ┌───────────────────────────┐   claim / complete /  ┌──────────────────┐
-│ business write +  │ ─────────────▶│ foleni_jobs               │◀───────────────────── │ WorkerPool       │
+│ business write +  │ ─────────────▶│ joblatch_jobs               │◀───────────────────── │ WorkerPool       │
 │ JobQueue.enqueue  │  YOUR tx      │  available → running →    │   fail / heartbeat    │  poller          │
 └───────────────────┘               │  succeeded | dead         │                       │  N worker threads│
                                     │                           │──── NOTIFY ─────────▶ │  heartbeats      │
@@ -18,7 +18,7 @@ How Foleni works, and why it is built this way. For the exact columns and indexe
                                                                                          └──────────────────┘
 ```
 
-Everything that matters is in **one table**, `foleni_jobs`. There is no in-memory queue that can be
+Everything that matters is in **one table**, `joblatch_jobs`. There is no in-memory queue that can be
 lost: a job is either a committed row or it does not exist.
 
 ## Job states
@@ -59,14 +59,14 @@ One statement picks the best due jobs (`priority DESC, run_at`), locks them, and
 
 ```sql
 WITH candidates AS (
-    SELECT id FROM foleni_jobs
+    SELECT id FROM joblatch_jobs
     WHERE queue = ? AND state = 'available' AND run_at <= now() AND attempts < max_attempts
     ORDER BY priority DESC, run_at
     LIMIT ?
     FOR UPDATE SKIP LOCKED
 )
-UPDATE foleni_jobs SET state = 'running', locked_by = ?, locked_until = now() + ?, attempts = attempts + 1
-FROM candidates WHERE foleni_jobs.id = candidates.id
+UPDATE joblatch_jobs SET state = 'running', locked_by = ?, locked_until = now() + ?, attempts = attempts + 1
+FROM candidates WHERE joblatch_jobs.id = candidates.id
 RETURNING ...
 ```
 
@@ -110,7 +110,7 @@ have sent the email. That is what idempotent handlers are for.
 
 ### 5. Wake-ups: LISTEN/NOTIFY, with polling as the safety net
 
-A trigger calls `pg_notify('foleni_jobs', <queue>)` whenever a job becomes available. Each
+A trigger calls `pg_notify('joblatch_jobs', <queue>)` whenever a job becomes available. Each
 `WorkerPool` holds one `LISTEN` connection and wakes its poller on a notification for its queue.
 
 Notifications are **hints**: Postgres does not store them, so a listener that was disconnected
