@@ -6,7 +6,7 @@ All notable changes to JobLatch are recorded here. The format follows
 
 ## [Unreleased]
 
-First release candidate: 0.1.0.
+First release candidate: 0.1.0, published as `io.github.math3wsl3vi:joblatch-core`.
 
 ### Added
 
