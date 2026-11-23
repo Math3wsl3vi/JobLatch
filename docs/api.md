@@ -9,7 +9,7 @@ custom workers.
 
 ## Dependency
 
-Not yet on Maven Central. Once released:
+On Maven Central:
 
 ```xml
 <dependency>
