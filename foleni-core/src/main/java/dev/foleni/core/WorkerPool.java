@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -45,6 +46,7 @@ import org.slf4j.LoggerFactory;
  *   <li>one poller: waits for free slots, claims, hands jobs to workers
  *   <li>{@code concurrency} workers: run handlers and record outcomes
  *   <li>one scheduler: heartbeats and timeouts for running jobs
+ *   <li>one notification listener (unless turned off): wakes the poller when a job arrives
  * </ul>
  *
  * <p>Run a {@link LeaseReaper} alongside, so jobs from crashed processes are recovered.
@@ -55,6 +57,12 @@ public final class WorkerPool implements AutoCloseable {
 
     /** After shutdownNow(), how long to wait for interrupted handlers to finish recording. */
     private static final Duration FORCED_STOP_GRACE = Duration.ofSeconds(5);
+
+    /**
+     * Shortest idle wait. Stops a busy loop when a job is due but every due row is momentarily
+     * locked by other workers (the claim skips them and comes back empty).
+     */
+    private static final Duration MIN_IDLE_WAIT = Duration.ofMillis(10);
 
     private final WorkerPoolConfig config;
     private final Map<String, JobHandler> handlers;
@@ -70,6 +78,15 @@ public final class WorkerPool implements AutoCloseable {
     private final AtomicInteger activeJobs = new AtomicInteger();
     private final ThreadPoolExecutor workers;
     private final ScheduledThreadPoolExecutor scheduler;
+
+    /**
+     * The idle poller waits on this. A notification (or anything else) calls wake(), which releases
+     * a permit and ends the wait early. Permits beyond the first are drained after waking, so a
+     * burst of notifications causes one extra claim pass, not hundreds.
+     */
+    private final Semaphore wakeUp = new Semaphore(0);
+    /** Null when notifications are turned off. */
+    private final JobNotificationListener listener;
 
     private final AtomicBoolean started = new AtomicBoolean(false);
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -110,6 +127,10 @@ public final class WorkerPool implements AutoCloseable {
         // Cancelled heartbeat/timeout tasks are removed at once instead of lingering until their
         // due time. Without this, a long timeout on many short jobs leaks memory.
         this.scheduler.setRemoveOnCancelPolicy(true);
+
+        this.listener = config.useNotifications()
+                ? new JobNotificationListener(dataSource, config.queue(), this::wake)
+                : null;
     }
 
     /**
@@ -128,6 +149,9 @@ public final class WorkerPool implements AutoCloseable {
         t.setDaemon(true);
         poller = t;
         t.start();
+        if (listener != null) {
+            listener.start();
+        }
         log.info("Worker pool {} started on queue {} with {} thread(s)", workerId, config.queue(), config.concurrency());
     }
 
@@ -172,14 +196,14 @@ public final class WorkerPool implements AutoCloseable {
                 freeSlots.release(slots);
                 log.warn("Claim failed ({}, SQLState {}); retrying in {} ms",
                         e.getClass().getSimpleName(), e.getSQLState(), config.pollInterval().toMillis());
-                if (!pause()) {
+                if (!pause(config.pollInterval())) {
                     break;
                 }
                 continue;
             } catch (RuntimeException e) {
                 freeSlots.release(slots);
                 log.error("Claim failed unexpectedly ({})", e.getClass().getName());
-                if (!pause()) {
+                if (!pause(config.pollInterval())) {
                     break;
                 }
                 continue;
@@ -192,7 +216,7 @@ public final class WorkerPool implements AutoCloseable {
             for (ClaimedJob job : jobs) {
                 submit(job);
             }
-            if (jobs.isEmpty() && !pause()) {
+            if (jobs.isEmpty() && !pause(idleWait())) {
                 break;
             }
         }
@@ -213,14 +237,41 @@ public final class WorkerPool implements AutoCloseable {
         return slots;
     }
 
-    /** Sleeps for the poll interval. Returns false if interrupted (meaning: stop). */
-    private boolean pause() {
+    /**
+     * How long to wait after a claim found nothing: until the next scheduled job is due, but never
+     * longer than the poll interval (the safety net) and never shorter than MIN_IDLE_WAIT.
+     */
+    private Duration idleWait() {
+        Duration wait = config.pollInterval();
         try {
-            Thread.sleep(config.pollInterval().toMillis());
+            Optional<Duration> nextDue = claimer.timeUntilNextDue(config.queue());
+            if (nextDue.isPresent() && nextDue.get().compareTo(wait) < 0) {
+                wait = nextDue.get();
+            }
+        } catch (SQLException | RuntimeException e) {
+            // Not worth a warning of its own: the next claim will report a real outage.
+            log.debug("Could not look up next due job ({})", e.getClass().getSimpleName());
+        }
+        return wait.compareTo(MIN_IDLE_WAIT) < 0 ? MIN_IDLE_WAIT : wait;
+    }
+
+    /**
+     * Waits up to {@code wait}, or less if {@link #wake()} is called. Returns false if interrupted
+     * (meaning: stop).
+     */
+    private boolean pause(Duration wait) {
+        try {
+            wakeUp.tryAcquire(wait.toMillis(), TimeUnit.MILLISECONDS);
+            wakeUp.drainPermits(); // collapse a burst of wake-ups into this one
             return true;
         } catch (InterruptedException e) {
             return false;
         }
+    }
+
+    /** Ends an idle wait early. Called by the notification listener. Cheap and thread-safe. */
+    private void wake() {
+        wakeUp.release();
     }
 
     private void submit(ClaimedJob job) {
@@ -359,6 +410,9 @@ public final class WorkerPool implements AutoCloseable {
         }
         stopping = true;
         try {
+            if (listener != null) {
+                listener.close(); // no more wake-ups needed
+            }
             Thread t = poller;
             if (t != null) {
                 t.interrupt();

@@ -9,6 +9,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
@@ -96,6 +97,22 @@ public final class JobClaimer {
                       j.attempts, j.max_attempts, j.locked_by, j.locked_until
             """;
 
+    /**
+     * How long until the earliest available job in a queue is due. Negative values mean "already
+     * due". NULL (no available jobs at all) comes back as SQL NULL. Served by the V3 index
+     * foleni_jobs_next_due_idx.
+     *
+     * <p>{@code EXTRACT(EPOCH FROM interval)} turns an interval into seconds. Times 1000 and cast to
+     * bigint gives whole milliseconds.
+     */
+    private static final String NEXT_DUE_SQL = """
+            SELECT (EXTRACT(EPOCH FROM (min(run_at) - now())) * 1000)::bigint
+            FROM foleni_jobs
+            WHERE queue = ?
+              AND state = 'available'
+              AND attempts < max_attempts
+            """;
+
     private final DataSource dataSource;
 
     /**
@@ -141,6 +158,30 @@ public final class JobClaimer {
                     e.addSuppressed(rollbackFailure);
                 }
                 throw e;
+            }
+        }
+    }
+
+    /**
+     * How long until the next available job in {@code queue} may run, on the database's clock.
+     * Lets an idle worker sleep exactly until a scheduled job is due, instead of waking up
+     * repeatedly to find nothing.
+     *
+     * @return empty if the queue has no available jobs at all, {@link Duration#ZERO} if one is
+     *     already due
+     */
+    public Optional<Duration> timeUntilNextDue(String queue) throws SQLException {
+        Names.requireValid("queue", queue);
+        try (Connection conn = dataSource.getConnection();
+                PreparedStatement ps = conn.prepareStatement(NEXT_DUE_SQL)) {
+            ps.setString(1, queue);
+            try (ResultSet rs = ps.executeQuery()) {
+                rs.next(); // an aggregate like min() always returns exactly one row
+                long millis = rs.getLong(1);
+                if (rs.wasNull()) { // getLong returns 0 for NULL. wasNull tells the two apart.
+                    return Optional.empty();
+                }
+                return Optional.of(Duration.ofMillis(Math.max(0, millis)));
             }
         }
     }

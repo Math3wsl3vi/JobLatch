@@ -39,7 +39,8 @@ public final class FoleniMigrations {
      */
     private static final List<Migration> MIGRATIONS = List.of(
             new Migration(1, "create jobs table", "/db/foleni/V1__create_jobs.sql"),
-            new Migration(2, "failure metadata", "/db/foleni/V2__failure_metadata.sql"));
+            new Migration(2, "failure metadata", "/db/foleni/V2__failure_metadata.sql"),
+            new Migration(3, "notify and schedule", "/db/foleni/V3__notify_and_schedule.sql"));
 
     /**
      * An arbitrary but fixed number used as the name of a Postgres "advisory lock". It just has to
