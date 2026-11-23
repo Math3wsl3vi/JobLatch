@@ -1,1 +1,0 @@
--- TODO: define the jobs table schema.
