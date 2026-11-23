@@ -6,9 +6,9 @@
 Background jobs for Java that commit in the same transaction as your data. PostgreSQL only: no
 Redis, no RabbitMQ, no second system to run.
 
-> **Status: 0.1.0-SNAPSHOT, not yet on Maven Central.** The design is complete and tested (122
-> automated tests, including multi-process crash tests), but the API may still change before 1.0.
-> See [Versioning](docs/release.md#semantic-versioning).
+> **Status: 0.1.0, the first release**, on Maven Central as `io.github.math3wsl3vi:joblatch-core`.
+> The design is complete and tested (132 automated tests, including multi-process crash tests),
+> but the API may still change before 1.0. See [Versioning](docs/release.md#semantic-versioning).
 
 ## Why
 
@@ -138,7 +138,7 @@ be turned off. These are queue-overhead numbers with no-op handlers, not product
 - [x] 7. Scheduled jobs; `LISTEN`/`NOTIFY` with polling as fallback
 - [x] 8. Crash test: workers killed at random, every job processed
 - [x] 9. Benchmarks against an established Java job library
-- [x] 10. Documentation and Maven Central publishing setup (first release pending, see [docs/release.md](docs/release.md))
+- [x] 10. Documentation and Maven Central publishing (0.1.0, see [docs/release.md](docs/release.md))
 
 ## Building
 

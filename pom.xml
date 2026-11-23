@@ -6,7 +6,7 @@
 
     <groupId>io.github.math3wsl3vi</groupId>
     <artifactId>joblatch-parent</artifactId>
-    <version>0.1.0-SNAPSHOT</version>
+    <version>0.1.0</version>
     <packaging>pom</packaging>
 
     <name>joblatch</name>
@@ -63,7 +63,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <!-- Reproducible builds: fixed timestamp in packaged archives. -->
-        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+        <project.build.outputTimestamp>2026-11-23T09:22:48Z</project.build.outputTimestamp>
 
         <!-- Runtime dependencies -->
         <postgresql.version>42.7.14</postgresql.version>
