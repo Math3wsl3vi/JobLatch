@@ -1,4 +1,4 @@
-# Local PostgreSQL for development and for the demo (foleni-demo).
+# Local PostgreSQL for development and for the demo (joblatch-demo).
 #
 #   cp .env.example .env      # then set a real password in .env (never committed)
 #   docker compose up -d
@@ -8,22 +8,22 @@ services:
   postgres:
     image: postgres:18-alpine
     environment:
-      POSTGRES_DB: foleni
-      POSTGRES_USER: ${POSTGRES_USER:-foleni}
+      POSTGRES_DB: joblatch
+      POSTGRES_USER: ${POSTGRES_USER:-joblatch}
       # Required: compose refuses to start without it instead of using a default password.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env (see .env.example)}
     ports:
       # Bound to localhost only: not reachable from other machines on the network.
-      - "127.0.0.1:${FOLENI_PG_PORT:-5432}:5432"
+      - "127.0.0.1:${JOBLATCH_PG_PORT:-5432}:5432"
     volumes:
       # PostgreSQL 18 images keep their data under /var/lib/postgresql/18/...,
       # so the volume is mounted one level up.
-      - foleni-pgdata:/var/lib/postgresql
+      - joblatch-pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d foleni"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d joblatch"]
       interval: 2s
       timeout: 3s
       retries: 15
 
 volumes:
-  foleni-pgdata:
+  joblatch-pgdata:

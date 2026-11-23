@@ -4,19 +4,19 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>dev.foleni</groupId>
-    <artifactId>foleni-parent</artifactId>
+    <groupId>dev.joblatch</groupId>
+    <artifactId>joblatch-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>foleni</name>
+    <name>joblatch</name>
     <description>A durable job queue for Java on PostgreSQL alone: transactional enqueue, SKIP LOCKED claiming, leases, retries and LISTEN/NOTIFY.</description>
     <!--
       Maven Central requires url, licenses, developers and scm. Children inherit them.
       child.*.inherit.append.path="false": without it Maven appends each module's artifactId to
-      these URLs (".../foleni/foleni-core"), which points nowhere in a single repository.
+      these URLs (".../joblatch/joblatch-core"), which points nowhere in a single repository.
     -->
-    <url child.project.url.inherit.append.path="false">https://github.com/Math3wsl3vi/foleni</url>
+    <url child.project.url.inherit.append.path="false">https://github.com/Math3wsl3vi/joblatch</url>
     <inceptionYear>2026</inceptionYear>
 
     <licenses>
@@ -38,23 +38,23 @@
     <scm child.scm.connection.inherit.append.path="false"
          child.scm.developerConnection.inherit.append.path="false"
          child.scm.url.inherit.append.path="false">
-        <connection>scm:git:https://github.com/Math3wsl3vi/foleni.git</connection>
-        <developerConnection>scm:git:https://github.com/Math3wsl3vi/foleni.git</developerConnection>
-        <url>https://github.com/Math3wsl3vi/foleni</url>
+        <connection>scm:git:https://github.com/Math3wsl3vi/joblatch.git</connection>
+        <developerConnection>scm:git:https://github.com/Math3wsl3vi/joblatch.git</developerConnection>
+        <url>https://github.com/Math3wsl3vi/joblatch</url>
         <tag>HEAD</tag>
     </scm>
 
     <issueManagement>
         <system>GitHub</system>
-        <url>https://github.com/Math3wsl3vi/foleni/issues</url>
+        <url>https://github.com/Math3wsl3vi/joblatch/issues</url>
     </issueManagement>
 
     <modules>
-        <module>foleni-core</module>
-        <module>foleni-crash-test</module>
-        <module>foleni-benchmarks</module>
-        <module>foleni-spring-boot-starter</module>
-        <module>foleni-demo</module>
+        <module>joblatch-core</module>
+        <module>joblatch-crash-test</module>
+        <module>joblatch-benchmarks</module>
+        <module>joblatch-spring-boot-starter</module>
+        <module>joblatch-demo</module>
     </modules>
 
     <properties>
@@ -70,7 +70,7 @@
         <hikaricp.version>7.1.0</hikaricp.version>
         <slf4j.version>2.0.20</slf4j.version>
 
-        <!-- Benchmarks only (foleni-benchmarks, never published) -->
+        <!-- Benchmarks only (joblatch-benchmarks, never published) -->
         <db-scheduler.version>17.0.0</db-scheduler.version>
 
         <!-- Test dependencies -->
@@ -102,8 +102,8 @@
         <dependencies>
             <!-- Internal modules -->
             <dependency>
-                <groupId>dev.foleni</groupId>
-                <artifactId>foleni-core</artifactId>
+                <groupId>dev.joblatch</groupId>
+                <artifactId>joblatch-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -349,12 +349,12 @@
                             <publishingServerId>central</publishingServerId>
                             <autoPublish>false</autoPublish>
                             <waitUntil>VALIDATED</waitUntil>
-                            <!-- Only foleni-parent and foleni-core are published. -->
+                            <!-- Only joblatch-parent and joblatch-core are published. -->
                             <excludeArtifacts>
-                                <artifact>foleni-crash-test</artifact>
-                                <artifact>foleni-benchmarks</artifact>
-                                <artifact>foleni-spring-boot-starter</artifact>
-                                <artifact>foleni-demo</artifact>
+                                <artifact>joblatch-crash-test</artifact>
+                                <artifact>joblatch-benchmarks</artifact>
+                                <artifact>joblatch-spring-boot-starter</artifact>
+                                <artifact>joblatch-demo</artifact>
                             </excludeArtifacts>
                         </configuration>
                     </plugin>

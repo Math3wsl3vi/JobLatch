@@ -1,7 +1,7 @@
 # Configuration reference
 
-Foleni has no configuration files and reads no environment variables. Everything is set in code.
-The values below are the defaults in `foleni-core`; the constants named are public so your code can
+JobLatch has no configuration files and reads no environment variables. Everything is set in code.
+The values below are the defaults in `joblatch-core`; the constants named are public so your code can
 refer to them.
 
 ## `WorkerPoolConfig`
@@ -40,8 +40,8 @@ WorkerPoolConfig.defaults("emails").withNotifications(false).withPollInterval(Du
 and, to remove the cost from enqueue as well, disable the triggers once (as the table owner):
 
 ```sql
-ALTER TABLE foleni_jobs DISABLE TRIGGER foleni_jobs_notify_insert;
-ALTER TABLE foleni_jobs DISABLE TRIGGER foleni_jobs_notify_update;
+ALTER TABLE joblatch_jobs DISABLE TRIGGER joblatch_jobs_notify_insert;
+ALTER TABLE joblatch_jobs DISABLE TRIGGER joblatch_jobs_notify_update;
 ```
 
 Re-enable them with `ENABLE TRIGGER` before turning notifications back on in any pool.
@@ -97,7 +97,7 @@ new LeaseReaper(new LeaseManager(dataSource), interval, batchSize)
 
 ## Connection pool sizing
 
-Foleni borrows connections from the `DataSource` you give it, briefly, for each operation, except
+JobLatch borrows connections from the `DataSource` you give it, briefly, for each operation, except
 the notification listener, which keeps one for as long as it runs. Per worker process, plan for:
 
 ```
@@ -111,8 +111,8 @@ across all processes.
 
 ## Logging
 
-Foleni logs through the SLF4J API and ships no backend. Loggers are named after the classes
-(`dev.foleni.core.WorkerPool`, …).
+JobLatch logs through the SLF4J API and ships no backend. Loggers are named after the classes
+(`dev.joblatch.core.WorkerPool`, …).
 
 | Level | Examples |
 |---|---|

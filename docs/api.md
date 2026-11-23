@@ -1,8 +1,8 @@
 # API guide
 
-Everything public lives in the package `dev.foleni.core`. The full Javadoc is generated with
-`./mvnw -pl foleni-core javadoc:javadoc` (output in `foleni-core/target/reports/apidocs`) and is
-published with every release as `foleni-core-<version>-javadoc.jar`.
+Everything public lives in the package `dev.joblatch.core`. The full Javadoc is generated with
+`./mvnw -pl joblatch-core javadoc:javadoc` (output in `joblatch-core/target/reports/apidocs`) and is
+published with every release as `joblatch-core-<version>-javadoc.jar`.
 
 Most applications need only the first five classes below. The rest exist for tests, tools and
 custom workers.
@@ -13,8 +13,8 @@ Not yet on Maven Central. Once released:
 
 ```xml
 <dependency>
-    <groupId>dev.foleni</groupId>
-    <artifactId>foleni-core</artifactId>
+    <groupId>dev.joblatch</groupId>
+    <artifactId>joblatch-core</artifactId>
     <version>0.1.0</version>
 </dependency>
 ```
@@ -24,10 +24,10 @@ PostgreSQL JDBC driver and the SLF4J API; choose your own logging backend and co
 
 ## Every application
 
-### `FoleniMigrations`: create and upgrade the tables
+### `JobLatchMigrations`: create and upgrade the tables
 
 ```java
-FoleniMigrations.migrate(dataSource);
+JobLatchMigrations.migrate(dataSource);
 ```
 
 Applies all pending migrations in one transaction. Safe to call repeatedly and from several
@@ -168,7 +168,7 @@ Database failures surface as `SQLException` with a meaningful SQLState (`08xxx`:
 table missing, so migrations have not run). Invalid arguments throw `IllegalArgumentException`;
 `null` where a value is required throws `NullPointerException`.
 
-Foleni's own log messages never contain payloads or credentials: they carry job IDs, queue and type
+JobLatch's own log messages never contain payloads or credentials: they carry job IDs, queue and type
 names, and SQLState codes. `JobQueue.enqueue` also strips the database's error text from the
 exceptions it throws, because a failed insert's message can quote the row. Other operations pass
 the driver's `SQLException` through unchanged; if your application logs those, set the JDBC driver

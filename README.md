@@ -1,8 +1,8 @@
-# Foleni
+# JobLatch
 
 Durable background jobs for Java, on PostgreSQL alone.
 
-*Foleni* is Swahili for "queue".
+*JobLatch* is Swahili for "queue".
 
 > **Status: 0.1.0-SNAPSHOT, not yet on Maven Central.** The design is complete and tested (122
 > automated tests, including multi-process crash tests), but the API may still change before 1.0.
@@ -14,7 +14,7 @@ An application saves an order and then needs to send a receipt. If it writes to 
 then publishes a job to a separate broker, a crash between the two steps either loses the job or
 sends a receipt for an order that was rolled back.
 
-Foleni stores jobs in the same PostgreSQL database as your data. A job is enqueued **inside your
+JobLatch stores jobs in the same PostgreSQL database as your data. A job is enqueued **inside your
 own transaction**, so the job and the business write commit together or not at all. There is no
 second system to run, monitor or back up.
 
@@ -38,7 +38,7 @@ second system to run, monitor or back up.
 
 ```java
 DataSource dataSource = ...;                       // a pooled DataSource, e.g. HikariCP
-FoleniMigrations.migrate(dataSource);              // once, at deploy time
+JobLatchMigrations.migrate(dataSource);              // once, at deploy time
 
 // 1. Enqueue in the same transaction as your business write
 try (Connection conn = dataSource.getConnection()) {
@@ -79,12 +79,12 @@ Needs Java 21 and Docker.
 ```bash
 cp .env.example .env                 # then edit the passwords in .env
 docker compose up -d                 # local PostgreSQL on localhost:5432
-set -a; source .env; set +a          # export FOLENI_DB_URL, FOLENI_DB_USER, FOLENI_DB_PASSWORD
-./mvnw -pl foleni-demo -am install -DskipTests
-./mvnw -pl foleni-demo exec:exec
+set -a; source .env; set +a          # export JOBLATCH_DB_URL, JOBLATCH_DB_USER, JOBLATCH_DB_PASSWORD
+./mvnw -pl joblatch-demo -am install -DskipTests
+./mvnw -pl joblatch-demo exec:exec
 ```
 
-The demo ([source](foleni-demo/src/main/java/dev/foleni/demo/DemoApplication.java)) places orders
+The demo ([source](joblatch-demo/src/main/java/dev/joblatch/demo/DemoApplication.java)) places orders
 with transactional enqueue, rolls one back, schedules one for later, sends a bad payload to the
 dead-letter state and shows the idempotency guard skipping a redelivery.
 
@@ -96,7 +96,7 @@ dead-letter state and shows the idempotency guard skipping a redelivery.
 | [API guide](docs/api.md) | use every public class, with examples |
 | [Configuration](docs/configuration.md) | look up every setting, default and limit |
 | [Database schema](docs/schema.md) | know every table, column, constraint and index, and why |
-| [Operations](docs/operations.md) | deploy, size, monitor and maintain Foleni in production |
+| [Operations](docs/operations.md) | deploy, size, monitor and maintain JobLatch in production |
 | [Failure recovery](docs/failure-recovery.md) | know what happens, and what to do, when something breaks |
 | [Security](docs/security.md) | set up least-privilege database roles and handle sensitive data |
 | [Benchmarks](docs/benchmarks.md) | see measured performance against db-scheduler, and its limits |
@@ -106,20 +106,20 @@ dead-letter state and shows the idempotency guard skipping a redelivery.
 ## Performance, in one paragraph
 
 Measured on one laptop against db-scheduler ([details and caveats](docs/benchmarks.md)): with
-LISTEN/NOTIFY, Foleni picks up a new job in about **3 ms at the median, versus about 50 ms** for
+LISTEN/NOTIFY, JobLatch picks up a new job in about **3 ms at the median, versus about 50 ms** for
 100 ms polling. db-scheduler drains a backlog somewhat faster under load (by ~10% to ~2× across two
-runs) and uses less database CPU per job. NOTIFY roughly halves Foleni's enqueue throughput; it can
+runs) and uses less database CPU per job. NOTIFY roughly halves JobLatch's enqueue throughput; it can
 be turned off. These are queue-overhead numbers with no-op handlers, not production capacity.
 
 ## Modules
 
 | Module | Published | Purpose |
 |---|---|---|
-| `foleni-core` | yes | The library. Plain Java and JDBC; depends only on the PostgreSQL driver and the SLF4J API. |
-| `foleni-demo` | no | The runnable example above. |
-| `foleni-crash-test` | no | Starts real worker processes and kills them with SIGKILL to prove recovery. |
-| `foleni-benchmarks` | no | Benchmarks against db-scheduler. |
-| `foleni-spring-boot-starter` | no | Placeholder. Not implemented. |
+| `joblatch-core` | yes | The library. Plain Java and JDBC; depends only on the PostgreSQL driver and the SLF4J API. |
+| `joblatch-demo` | no | The runnable example above. |
+| `joblatch-crash-test` | no | Starts real worker processes and kills them with SIGKILL to prove recovery. |
+| `joblatch-benchmarks` | no | Benchmarks against db-scheduler. |
+| `joblatch-spring-boot-starter` | no | Placeholder. Not implemented. |
 
 ## Roadmap
 
