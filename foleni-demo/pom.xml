@@ -12,7 +12,7 @@
 
     <artifactId>foleni-demo</artifactId>
     <name>foleni-demo</name>
-    <description>Demo application using foleni-core.</description>
+    <description>Runnable example: transactional enqueue, an idempotent handler, a worker pool and a reaper.</description>
 
     <properties>
         <!-- Demo app is never published. -->
@@ -24,5 +24,38 @@
             <groupId>dev.foleni</groupId>
             <artifactId>foleni-core</artifactId>
         </dependency>
+        <!-- A real connection pool, as a production application would use. -->
+        <dependency>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
+        </dependency>
+        <!-- An application picks its own logging backend. Foleni only uses the SLF4J API. -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+              Run (needs the database from docker-compose.yml and the FOLENI_* variables, see README):
+                ./mvnw -pl foleni-demo -am install -DskipTests
+                ./mvnw -pl foleni-demo exec:exec
+              exec:exec starts a separate JVM, which inherits the FOLENI_* environment variables.
+            -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <configuration>
+                    <executable>${java.home}/bin/java</executable>
+                    <arguments>
+                        <argument>-classpath</argument>
+                        <classpath/>
+                        <argument>dev.foleni.demo.DemoApplication</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
 </project>
