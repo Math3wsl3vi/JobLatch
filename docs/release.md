@@ -39,11 +39,20 @@ application without needing changes.
 ## One-time setup
 
 1. **Central Portal account** at [central.sonatype.com](https://central.sonatype.com).
-2. **Namespace.** Central only accepts a `groupId` you can prove you control. `dev.joblatch` requires
-   control of the domain **joblatch.dev** (verified with a DNS TXT record). If you do not own it,
-   either register it or change the `groupId` in every POM to the namespace Central gives a GitHub
-   account (`io.github.<username>`), and update the docs. **Decide this before the first release:**
-   a `groupId` cannot be changed for versions already published.
+2. **Namespace.** Central only accepts a `groupId` you can prove you control. JobLatch uses
+   `io.github.math3wsl3vi`, the namespace Central grants to the GitHub account `Math3wsl3vi`
+   (the `groupId` changes nothing in the code: Java packages stay `dev.joblatch.*`).
+   - Sign up for the Portal **with that GitHub account**. According to Central's documentation, it
+     then provisions `io.github.<username>` automatically "in most cases".
+   - Check under your account menu → **View Namespaces** that it is listed and **verified**, and
+     that it is spelled exactly `io.github.math3wsl3vi`. Central's documentation does not say how
+     upper-case letters in a username are handled; if the Portal shows a different spelling, change
+     the `groupId` in every POM to match it before the first upload.
+   - If it is not there: Publishing Settings → Add Namespace, then create a temporary public GitHub
+     repository named after the verification key the Portal shows, press Verify, and delete the
+     repository once verified. Or email Central Support (see
+     [central.sonatype.org/register/namespace](https://central.sonatype.org/register/namespace/)).
+   - A `groupId` can never be changed for versions already published.
 3. **Signing key.** Central requires every file to be signed:
    ```bash
    gpg --quick-gen-key "Your Name <you@example.com>" ed25519 sign 2y
@@ -80,6 +89,7 @@ Replace `X.Y.Z` with the version being released and `X.Y.(Z+1)` with the next on
 - [ ] Version bump is right for the changes (see the table above).
 - [ ] New migrations follow the compatibility rules above.
 - [ ] Docs match the code (defaults in configuration.md, API in api.md).
+- [ ] The namespace `io.github.math3wsl3vi` shows as verified in the Portal (first release only).
 
 **Build and stage**
 
@@ -114,7 +124,7 @@ The upload is validated by Central and then **waits** (`autoPublish=false`).
       and commit.
 - [ ] Add an empty "Unreleased" section to `CHANGELOG.md`.
 - [ ] Within a few hours, check the artifact resolves:
-      `https://repo1.maven.org/maven2/dev/joblatch/joblatch-core/X.Y.Z/`.
+      `https://repo1.maven.org/maven2/io/github/math3wsl3vi/joblatch-core/X.Y.Z/`.
 
 ## What was verified, and what was not
 

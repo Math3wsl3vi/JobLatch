@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>dev.joblatch</groupId>
+        <groupId>io.github.math3wsl3vi</groupId>
         <artifactId>joblatch-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
     </parent>
@@ -20,7 +20,7 @@
 
     <dependencies>
         <dependency>
-            <groupId>dev.joblatch</groupId>
+            <groupId>io.github.math3wsl3vi</groupId>
             <artifactId>joblatch-core</artifactId>
         </dependency>
         <!-- The worker process uses a real connection pool, as a production app would. -->
