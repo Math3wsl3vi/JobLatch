@@ -106,6 +106,23 @@ reaper.close();
 Run one in **every** worker process. Without any reaper, jobs of crashed workers stay `running`
 forever. Several reapers at once are safe.
 
+### `JobEventListener`, `JobExecution`, `JobCounters`: metrics
+
+```java
+JobCounters counters = new JobCounters();                        // or your Micrometer adapter
+WorkerPool pool = new WorkerPool(dataSource, config, handlers, counters);
+LeaseReaper reaper = new LeaseReaper(new LeaseManager(dataSource), Duration.ofSeconds(10), 100, counters);
+...
+JobCounters.Snapshot s = counters.snapshot();                    // s.succeeded(), s.dead(), ...
+```
+
+A `JobEventListener` is told about claims, every finished attempt (`JobExecution`: outcome, handler
+duration, failure, timeout), lost leases, reclaimed leases and background errors. Implement only
+the methods you need; implementations must be fast, thread-safe and must not throw (anything thrown
+is caught and logged). `pool.queue()`, `pool.concurrency()` and `pool.activeJobs()` feed
+utilization gauges. Full event list, a Micrometer adapter and alerting advice:
+[observability.md](observability.md).
+
 ### `DeadLetterQueue` and `DeadJob`: inspect and requeue failed jobs
 
 ```java
@@ -131,7 +148,7 @@ leaves out the payload and the error text.
 | `TransitionResult` | `SUCCEEDED`, `RETRY_SCHEDULED`, `DEAD`, `NOT_OWNER` | `NOT_OWNER`: you no longer own the job; nothing changed. Log it and move on. |
 | `LeaseManager` | `renew(job, leaseDuration)` → `Optional<Instant>`; `reclaimExpired(maxJobs)` → `ReclaimResult` | Empty from `renew`: you lost the job. |
 | `RetryPolicy` | `defaults()`, `noDelay()`, `new RetryPolicy(base, max, multiplier, jitter)`, `delayAfter(attempt)` | See [configuration.md](configuration.md). |
-| `JobNotificationListener` | `start()`, `isListening()`, `close()` | One LISTEN connection; calls a `Runnable` when a job arrives in its queue. |
+| `JobNotificationListener` | `start()`, `isListening()`, `close()` | One LISTEN connection; calls a `Runnable` when a job arrives in its queue, and optionally a callback when the connection is lost. |
 
 ### Exactly-once for database work: `complete(connection, job)`
 
@@ -158,8 +175,8 @@ job)` inside a handler leads to a harmless `NOT_OWNER` log line from the pool.
 
 Every class above is thread-safe, except that `WorkerPool`, `LeaseReaper` and
 `JobNotificationListener` must be started once and closed once (both are checked). Records
-(`NewJob`, `ClaimedJob`, `DeadJob`, `RetryPolicy`, `WorkerPoolConfig`, `ReclaimResult`) are
-immutable.
+(`NewJob`, `ClaimedJob`, `DeadJob`, `RetryPolicy`, `WorkerPoolConfig`, `ReclaimResult`,
+`JobExecution`) are immutable. Your `JobEventListener` must be thread-safe; `JobCounters` is.
 
 ## Errors
 

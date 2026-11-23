@@ -65,6 +65,8 @@ public final class WorkerPool implements AutoCloseable {
     private static final Duration MIN_IDLE_WAIT = Duration.ofMillis(10);
 
     private final WorkerPoolConfig config;
+    /** Never null; already wrapped so a throwing listener cannot break this pool. */
+    private final JobEventListener events;
     private final Map<String, JobHandler> handlers;
     private final JobClaimer claimer;
     private final JobLifecycle lifecycle;
@@ -101,8 +103,20 @@ public final class WorkerPool implements AutoCloseable {
      * @param handlers   job type → handler. Jobs of other types are failed (and retried), not lost.
      */
     public WorkerPool(DataSource dataSource, WorkerPoolConfig config, Map<String, JobHandler> handlers) {
+        this(dataSource, config, handlers, JobEventListener.NONE);
+    }
+
+    /**
+     * Same, reporting what happens to {@code events}: for metrics, see {@link JobEventListener}.
+     *
+     * @param events receives claim, outcome, lease and error events. Use {@link JobCounters} for
+     *     in-memory totals, or an adapter to your metrics library.
+     */
+    public WorkerPool(DataSource dataSource, WorkerPoolConfig config, Map<String, JobHandler> handlers,
+            JobEventListener events) {
         Objects.requireNonNull(dataSource, "dataSource");
         this.config = Objects.requireNonNull(config, "config");
+        this.events = SafeEventListener.wrap(events);
         // Map.copyOf makes an unmodifiable copy (later changes by the caller do not affect us) and
         // rejects null keys and values.
         this.handlers = Map.copyOf(Objects.requireNonNull(handlers, "handlers"));
@@ -129,7 +143,8 @@ public final class WorkerPool implements AutoCloseable {
         this.scheduler.setRemoveOnCancelPolicy(true);
 
         this.listener = config.useNotifications()
-                ? new JobNotificationListener(dataSource, config.queue(), this::wake)
+                ? new JobNotificationListener(dataSource, config.queue(), this::wake,
+                        e -> this.events.backgroundError(JobEventListener.Component.NOTIFICATION_LISTENER, config.queue(), e))
                 : null;
     }
 
@@ -158,6 +173,16 @@ public final class WorkerPool implements AutoCloseable {
     /** This pool's worker ID, as stored in {@code locked_by}. */
     public String workerId() {
         return workerId;
+    }
+
+    /** The queue this pool takes jobs from. Useful as a metric tag. */
+    public String queue() {
+        return config.queue();
+    }
+
+    /** The number of worker threads: the most jobs this pool runs at once. For utilization gauges. */
+    public int concurrency() {
+        return config.concurrency();
     }
 
     /**
@@ -190,12 +215,14 @@ public final class WorkerPool implements AutoCloseable {
             }
 
             List<ClaimedJob> jobs;
+            long claimStart = System.nanoTime();
             try {
                 jobs = claimer.claim(config.queue(), workerId, slots, config.leaseDuration());
             } catch (SQLException e) {
                 freeSlots.release(slots);
                 log.warn("Claim failed ({}, SQLState {}); retrying in {} ms",
                         e.getClass().getSimpleName(), e.getSQLState(), config.pollInterval().toMillis());
+                events.backgroundError(JobEventListener.Component.CLAIM, config.queue(), e);
                 if (!pause(config.pollInterval())) {
                     break;
                 }
@@ -203,11 +230,14 @@ public final class WorkerPool implements AutoCloseable {
             } catch (RuntimeException e) {
                 freeSlots.release(slots);
                 log.error("Claim failed unexpectedly ({})", e.getClass().getName());
+                events.backgroundError(JobEventListener.Component.CLAIM, config.queue(), e);
                 if (!pause(config.pollInterval())) {
                     break;
                 }
                 continue;
             }
+
+            events.jobsClaimed(config.queue(), slots, jobs.size(), Duration.ofNanos(System.nanoTime() - claimStart));
 
             // Give back the permits we reserved but could not fill.
             freeSlots.release(slots - jobs.size());
@@ -301,6 +331,7 @@ public final class WorkerPool implements AutoCloseable {
                         config.jobTimeout().toMillis(), TimeUnit.MILLISECONDS);
 
         Throwable failure = null;
+        long handlerStart = System.nanoTime();
         try {
             JobHandler handler = handlers.get(job.jobType());
             if (handler == null) {
@@ -319,11 +350,14 @@ public final class WorkerPool implements AutoCloseable {
                 timeout.cancel(false);
             }
         }
+        Duration handlerDuration = Duration.ofNanos(System.nanoTime() - handlerStart);
 
         // From here on, no heartbeat or timeout can interrupt this thread for this job.
         boolean interruptedByShutdown = running.finish();
         try {
-            recordOutcome(job, failure, running.reason());
+            boolean timedOut = RunningJob.TIMED_OUT.equals(running.reason());
+            JobExecution.Outcome outcome = recordOutcome(job, failure, running.reason());
+            events.jobFinished(new JobExecution(job, outcome, handlerDuration, failure, timedOut));
         } finally {
             activeJobs.decrementAndGet();
             freeSlots.release();
@@ -339,7 +373,8 @@ public final class WorkerPool implements AutoCloseable {
         }
     }
 
-    private void recordOutcome(ClaimedJob job, Throwable failure, String interruptReason) {
+    /** Writes the outcome and returns what was recorded. Never throws. */
+    private JobExecution.Outcome recordOutcome(ClaimedJob job, Throwable failure, String interruptReason) {
         try {
             TransitionResult result;
             if (failure == null) {
@@ -357,13 +392,23 @@ public final class WorkerPool implements AutoCloseable {
                 log.warn("Job {} ({}) failed with {}: {}", job.id(), job.jobType(),
                         failure.getClass().getName(), result);
             }
+            return switch (result) {
+                case SUCCEEDED -> JobExecution.Outcome.SUCCEEDED;
+                case RETRY_SCHEDULED -> JobExecution.Outcome.RETRY_SCHEDULED;
+                case DEAD -> JobExecution.Outcome.DEAD;
+                case NOT_OWNER -> JobExecution.Outcome.NOT_OWNER;
+            };
         } catch (SQLException e) {
             // The database did not record the outcome. The job is still 'running' and will be
             // reclaimed when its lease expires, then run again: at-least-once, not lost.
             log.warn("Could not record outcome of job {} ({}, SQLState {}); it will be retried after its lease expires",
                     job.id(), e.getClass().getSimpleName(), e.getSQLState());
+            events.backgroundError(JobEventListener.Component.RECORD_OUTCOME, config.queue(), e);
+            return JobExecution.Outcome.NOT_RECORDED;
         } catch (RuntimeException e) {
             log.error("Could not record outcome of job {} ({})", job.id(), e.getClass().getName());
+            events.backgroundError(JobEventListener.Component.RECORD_OUTCOME, config.queue(), e);
+            return JobExecution.Outcome.NOT_RECORDED;
         }
     }
 
@@ -382,14 +427,17 @@ public final class WorkerPool implements AutoCloseable {
             if (leases.renew(job, config.leaseDuration()).isEmpty()) {
                 log.warn("Lost ownership of job {}; interrupting its handler", job.id());
                 running.interrupt(RunningJob.OWNERSHIP_LOST);
+                events.leaseLost(job);
             }
         } catch (SQLException e) {
             // Keep the job running. If renewals keep failing, the lease expires and another worker
             // may take over. The fencing token then rejects this worker's outcome.
             log.warn("Heartbeat for job {} failed ({}, SQLState {})",
                     job.id(), e.getClass().getSimpleName(), e.getSQLState());
+            events.backgroundError(JobEventListener.Component.HEARTBEAT, config.queue(), e);
         } catch (RuntimeException e) {
             log.error("Heartbeat for job {} failed unexpectedly ({})", job.id(), e.getClass().getName());
+            events.backgroundError(JobEventListener.Component.HEARTBEAT, config.queue(), e);
         }
     }
 

@@ -6,6 +6,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 import javax.sql.DataSource;
 import org.postgresql.PGConnection;
 import org.postgresql.PGNotification;
@@ -57,6 +58,7 @@ public final class JobNotificationListener implements AutoCloseable {
     private final DataSource dataSource;
     private final String queue;
     private final Runnable onWake;
+    private final Consumer<Exception> onConnectionLost;
     private final AtomicBoolean started = new AtomicBoolean(false);
 
     private volatile boolean stopping = false;
@@ -71,10 +73,23 @@ public final class JobNotificationListener implements AutoCloseable {
      * @param onWake     called on the listener's thread. Must be quick and must not throw.
      */
     public JobNotificationListener(DataSource dataSource, String queue, Runnable onWake) {
+        this(dataSource, queue, onWake, e -> { });
+    }
+
+    /**
+     * Same, with a callback for lost connections (used by {@link WorkerPool} to report
+     * {@link JobEventListener.Component#NOTIFICATION_LISTENER} errors).
+     *
+     * @param onConnectionLost called on the listener's thread each time the LISTEN connection fails
+     *     or cannot be opened, before the listener reconnects. Must be quick and must not throw.
+     */
+    public JobNotificationListener(DataSource dataSource, String queue, Runnable onWake,
+            Consumer<Exception> onConnectionLost) {
         this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
         Names.requireValid("queue", queue);
         this.queue = queue;
         this.onWake = Objects.requireNonNull(onWake, "onWake");
+        this.onConnectionLost = Objects.requireNonNull(onConnectionLost, "onConnectionLost");
     }
 
     /** Starts listening on a background thread. */
@@ -108,9 +123,11 @@ public final class JobNotificationListener implements AutoCloseable {
             } catch (SQLException e) {
                 log.warn("Notification connection for queue {} lost ({}, SQLState {}); reconnecting in {} ms",
                         queue, e.getClass().getSimpleName(), e.getSQLState(), reconnectDelay.toMillis());
+                reportConnectionLost(e);
             } catch (RuntimeException e) {
                 log.error("Notification listener for queue {} failed unexpectedly ({}); reconnecting in {} ms",
                         queue, e.getClass().getName(), reconnectDelay.toMillis());
+                reportConnectionLost(e);
             } finally {
                 listening = false;
                 backendPid = -1;
@@ -156,6 +173,18 @@ public final class JobNotificationListener implements AutoCloseable {
                     nextHealthCheck = System.nanoTime() + HEALTH_CHECK_INTERVAL.toNanos();
                 }
             }
+        }
+    }
+
+    /** Not during shutdown: closing the connection on purpose is not a failure. */
+    private void reportConnectionLost(Exception e) {
+        if (stopping) {
+            return;
+        }
+        try {
+            onConnectionLost.accept(e);
+        } catch (RuntimeException callbackFailure) {
+            log.error("onConnectionLost callback for queue {} threw {}", queue, callbackFailure.getClass().getName());
         }
     }
 
