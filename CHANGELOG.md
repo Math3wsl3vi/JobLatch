@@ -10,6 +10,11 @@ First release candidate: 0.1.0.
 
 ### Added
 
+- Metrics without a metrics dependency: `JobEventListener` (claims, finished attempts, lost and
+  reclaimed leases, background errors), `JobExecution`, and `JobCounters` for in-memory totals.
+  `WorkerPool` and `LeaseReaper` take a listener in new constructors; a throwing listener cannot
+  break them. `WorkerPool.queue()` and `concurrency()` for utilization gauges. A tested Micrometer
+  adapter in `docs/observability.md`.
 - Transactional enqueue on the caller's connection (`JobQueue.enqueue(Connection, NewJob)`) and
   standalone enqueue (`JobQueue.enqueue(DataSource, NewJob)`), with input validation and payload-free
   error messages.
@@ -30,8 +35,8 @@ First release candidate: 0.1.0.
 - Least-privilege role scripts, monitoring and retention SQL (`docs/sql/`), verified by tests.
 - Multi-process crash tests, benchmarks against db-scheduler, a runnable demo and Docker Compose
   setup for local development.
-- Documentation: architecture, API, configuration, schema, operations, failure recovery, security,
-  benchmarks and releasing.
+- Documentation: architecture, API, configuration, schema, operations, observability, failure
+  recovery, security, benchmarks and releasing.
 
 ### Tables
 

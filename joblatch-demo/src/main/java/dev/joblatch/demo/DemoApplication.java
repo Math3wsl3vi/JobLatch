@@ -3,6 +3,7 @@ package dev.joblatch.demo;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import dev.joblatch.core.ClaimedJob;
+import dev.joblatch.core.JobCounters;
 import dev.joblatch.core.JobLatchMigrations;
 import dev.joblatch.core.JobQueue;
 import dev.joblatch.core.LeaseManager;
@@ -39,6 +40,8 @@ import org.slf4j.LoggerFactory;
  *       sent" with a conditional UPDATE: running it twice cannot send two receipts.
  *   <li><b>A permanent failure</b> that goes straight to the dead-letter state.
  *   <li><b>A worker pool and a lease reaper</b>, stopped cleanly by a shutdown hook.
+ *   <li><b>Metrics.</b> {@link JobCounters} counts what the pool and reaper did, with no metrics
+ *       library. Swap it for a Micrometer adapter in a real application (docs/observability.md).
  * </ol>
  *
  * <p>The demo exits by itself once every job has finished.
@@ -74,10 +77,13 @@ public final class DemoApplication {
         log.info("Placed {} orders (+1 rolled back, +1 scheduled in {} s, +1 with a bad order ID)",
                 ORDERS, SCHEDULED_DELAY.toSeconds());
 
+        // One listener for both: in-memory totals of everything the pool and reaper do.
+        JobCounters counters = new JobCounters();
         WorkerPool pool = new WorkerPool(dataSource,
                 WorkerPoolConfig.defaults(QUEUE).withConcurrency(2),
-                Map.of(SEND_RECEIPT, job -> sendReceipt(dataSource, job)));
-        LeaseReaper reaper = new LeaseReaper(new LeaseManager(dataSource), Duration.ofSeconds(10), 100);
+                Map.of(SEND_RECEIPT, job -> sendReceipt(dataSource, job)),
+                counters);
+        LeaseReaper reaper = new LeaseReaper(new LeaseManager(dataSource), Duration.ofSeconds(10), 100, counters);
 
         // SIGTERM / Ctrl+C: stop claiming, let running jobs finish, then release connections.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -95,6 +101,7 @@ public final class DemoApplication {
                 firstOrder);
         markReceiptSent(dataSource, firstOrder);
         printSummary(dataSource);
+        printMetrics(counters);
         System.exit(0); // runs the shutdown hook
     }
 
@@ -223,6 +230,14 @@ public final class DemoApplication {
         log.info("Done. Jobs succeeded: {}, dead: {}. Orders with a receipt: {}.",
                 countJobs(ds, "state = 'succeeded'"), countJobs(ds, "state = 'dead'"),
                 count(ds, "SELECT count(*) FROM demo_orders WHERE receipt_sent_at IS NOT NULL"));
+    }
+
+    /** What this process's pool and reaper reported, independent of the database's totals. */
+    private static void printMetrics(JobCounters counters) {
+        JobCounters.Snapshot s = counters.snapshot();
+        log.info("Metrics from this run: claimed={} succeeded={} retried={} dead={} (average handler {} ms, max {} ms)",
+                s.claimed(), s.succeeded(), s.retryScheduled(), s.dead(),
+                s.averageHandlerTime().toMillis(), s.maxHandlerTime().toMillis());
     }
 
     /** {@code where} is always a fixed string from this file, never input. */

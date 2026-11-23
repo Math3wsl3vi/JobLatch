@@ -33,6 +33,9 @@ second system to run, monitor or back up.
 - **Retries with backoff** (exponential, capped, with jitter) and a **dead-letter state** that keeps
   failed jobs for inspection and requeueing.
 - **Scheduled jobs** never run before their time, measured on the database's clock.
+- **Metrics without a metrics dependency.** Workers report claims, outcomes, handler latency, lost
+  leases and errors to a listener: plug in Micrometer or Prometheus, or use the built-in counters
+  ([observability](docs/observability.md)).
 
 **Not provided:** exactly-once execution, ordering across workers, recurring (cron) jobs.
 
@@ -99,6 +102,7 @@ dead-letter state and shows the idempotency guard skipping a redelivery.
 | [Configuration](docs/configuration.md) | look up every setting, default and limit |
 | [Database schema](docs/schema.md) | know every table, column, constraint and index, and why |
 | [Operations](docs/operations.md) | deploy, size, monitor and maintain JobLatch in production |
+| [Observability](docs/observability.md) | get metrics out of workers (Micrometer, Prometheus, or built-in counters) |
 | [Failure recovery](docs/failure-recovery.md) | know what happens, and what to do, when something breaks |
 | [Security](docs/security.md) | set up least-privilege database roles and handle sensitive data |
 | [Benchmarks](docs/benchmarks.md) | see measured performance against db-scheduler, and its limits |

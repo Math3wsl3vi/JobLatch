@@ -147,6 +147,16 @@ scheduler: per running job, a heartbeat every lease/3 and an optional timeout
 listener: LISTEN connection; wakes the poller
 ```
 
+## Observability
+
+The pool and the reaper report events to a `JobEventListener` at the points above: after every claim,
+after every attempt's outcome is recorded, when a heartbeat finds the lease taken, when the reaper
+takes jobs back, and when a background activity fails. JobLatch wraps the listener so that anything
+it throws is logged and ignored: a metrics bug must never stop job processing, and an exception
+escaping a scheduled heartbeat would silently cancel it. Events describe what one process did;
+the queue's state across all processes comes from the database
+([observability.md](observability.md)).
+
 ## Graceful shutdown
 
 `WorkerPool.close()`: stop the listener and the poller (no new claims) → let running jobs finish for

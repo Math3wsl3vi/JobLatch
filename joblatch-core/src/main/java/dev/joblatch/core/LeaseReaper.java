@@ -43,6 +43,8 @@ public final class LeaseReaper implements AutoCloseable {
     private static final Duration CLOSE_TIMEOUT = Duration.ofSeconds(10);
 
     private final LeaseManager leaseManager;
+    /** Never null; already wrapped so a throwing listener cannot stop the reaper. */
+    private final JobEventListener events;
     private final Duration interval;
     private final int batchSize;
     private final ScheduledExecutorService executor;
@@ -54,7 +56,18 @@ public final class LeaseReaper implements AutoCloseable {
      * @param batchSize    jobs per transaction, between 1 and {@link LeaseManager#MAX_RECLAIM_BATCH}
      */
     public LeaseReaper(LeaseManager leaseManager, Duration interval, int batchSize) {
+        this(leaseManager, interval, batchSize, JobEventListener.NONE);
+    }
+
+    /**
+     * Same, reporting reclaimed leases and failed passes to {@code events}.
+     *
+     * @param events receives {@link JobEventListener#leasesReclaimed} and
+     *     {@link JobEventListener#backgroundError} with {@link JobEventListener.Component#REAPER}
+     */
+    public LeaseReaper(LeaseManager leaseManager, Duration interval, int batchSize, JobEventListener events) {
         this.leaseManager = Objects.requireNonNull(leaseManager, "leaseManager");
+        this.events = SafeEventListener.wrap(events);
         this.interval = Objects.requireNonNull(interval, "interval");
         if (interval.toMillis() < 1) {
             throw new IllegalArgumentException("interval must be at least 1 millisecond");
@@ -105,6 +118,9 @@ public final class LeaseReaper implements AutoCloseable {
                     return; // close() asked us to stop
                 }
                 ReclaimResult result = leaseManager.reclaimExpired(batchSize);
+                if (result.total() > 0) {
+                    events.leasesReclaimed(result);
+                }
                 if (result.total() < batchSize) {
                     return; // nothing more waiting
                 }
@@ -114,10 +130,12 @@ public final class LeaseReaper implements AutoCloseable {
             // message of a database error can quote row data.
             log.warn("Lease reaper pass failed ({}, SQLState {}); retrying in {} ms",
                     e.getClass().getSimpleName(), e.getSQLState(), interval.toMillis());
+            events.backgroundError(JobEventListener.Component.REAPER, null, e);
         } catch (RuntimeException e) {
             // A bug, not an outage. Still keep the reaper alive: stopping recovery is worse.
             log.error("Lease reaper pass failed unexpectedly ({}); retrying in {} ms",
                     e.getClass().getName(), interval.toMillis());
+            events.backgroundError(JobEventListener.Component.REAPER, null, e);
         }
     }
 

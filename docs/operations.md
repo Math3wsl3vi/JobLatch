@@ -51,6 +51,11 @@ the rollout takes longer than a job's retries last, give such jobs a higher `max
 
 ## Monitoring
 
+Two complementary sources. **Metrics from the workers** (throughput, outcomes, handler latency,
+errors, utilization) come from a `JobEventListener`: see [observability.md](observability.md) for a
+Micrometer adapter and alert rules. **The state of the queue** (backlog, waiting time, stuck leases,
+dead jobs, across every process) comes from the database, below.
+
 Every query is in [`docs/sql/monitoring.sql`](sql/monitoring.sql), runs as the read/write runtime
 role, and is verified by the test suite.
 
