@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>dev.joblatch</groupId>
+    <groupId>io.github.math3wsl3vi</groupId>
     <artifactId>joblatch-parent</artifactId>
     <version>0.1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -102,7 +102,7 @@
         <dependencies>
             <!-- Internal modules -->
             <dependency>
-                <groupId>dev.joblatch</groupId>
+                <groupId>io.github.math3wsl3vi</groupId>
                 <artifactId>joblatch-core</artifactId>
                 <version>${project.version}</version>
             </dependency>
