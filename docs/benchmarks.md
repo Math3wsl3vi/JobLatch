@@ -65,10 +65,20 @@ These are design differences, not configuration mistakes. They are part of what 
 
 ## Results
 
-Machine: Apple M4 (10 cores, 16 GiB), macOS 26.2, Java 21.0.11. PostgreSQL 18 in Docker Desktop's
-Linux VM (4 CPUs, 3.8 GiB). 10,000 jobs per run, 3 repetitions, `fsync=on`. Run on 2026-11-23.
+Two full runs on the same machine, on 2026-11-23: Apple M4 (10 cores, 16 GiB), macOS 26.2,
+Java 21.0.11. PostgreSQL 18 in Docker Desktop's Linux VM (4 CPUs, 3.8 GiB). 10,000 jobs per run,
+3 repetitions, `fsync=on`.
+
+- **Run 1:** during development. db-scheduler jobs scheduled with the call that 17.0.0 deprecates.
+- **Run 2:** after the harness switched to db-scheduler's current scheduling call (see Corrections,
+  item 4). Otherwise identical code.
+
+Numbers that differ a lot between the two runs are noise, not findings. See
+[What reproduced](#what-reproduced-and-what-did-not).
 
 ### Drain throughput (claim + run + complete), jobs/s, median (range)
+
+Run 1:
 
 | Worker threads | foleni | foleni-poll | db-scheduler |
 |---:|---:|---:|---:|
@@ -77,71 +87,110 @@ Linux VM (4 CPUs, 3.8 GiB). 10,000 jobs per run, 3 repetitions, `fsync=on`. Run 
 | 16 | 7,141 (2,836–7,275) | 6,421 (6,392–7,000) | 9,767 (9,066–11,286) |
 | 32 | 5,523 (4,338–6,340) | 8,454 (6,677–8,550) | 12,429 (10,878–14,972) |
 
-### Database cost per 10,000-job drain (last repetition)
+Run 2:
 
-| Worker threads | foleni DB CPU s / WAL MiB | foleni-poll | db-scheduler |
+| Worker threads | foleni | foleni-poll | db-scheduler |
+|---:|---:|---:|---:|
+| 1 | 1,516 (1,498–1,644) | 1,443 (1,422–1,468) | 1,561 (1,400–1,645) |
+| 4 | 3,644 (3,104–3,996) | 3,893 (3,825–4,051) | 4,759 (3,766–4,876) |
+| 16 | 8,166 (7,430–8,490) | 8,292 (7,498–8,680) | 6,762 (5,454–9,105) |
+| 32 | 8,931 (7,598–9,874) | 9,837 (8,233–10,210) | 10,593 (10,023–12,929) |
+
+### Database cost per 10,000-job drain: DB CPU seconds / WAL MiB (last repetition)
+
+| Worker threads | foleni (run 1 · run 2) | foleni-poll (run 1 · run 2) | db-scheduler (run 1 · run 2) |
 |---:|---|---|---|
-| 1 | 4.0 / 7.6 | 2.7 / 7.6 | 1.8 / 6.4 |
-| 4 | 4.1 / 7.1 | 2.8 / 7.1 | 1.5 / 6.3 |
-| 16 | 2.0 / 6.7 | 1.9 / 6.6 | 0.9 / 6.0 |
-| 32 | 2.3 / 6.6 | 1.9 / 6.5 | 1.1 / 6.0 |
+| 1 | 4.0 / 7.6 · 2.7 / 7.2 | 2.7 / 7.6 · 2.3 / 7.3 | 1.8 / 6.4 · 2.0 / 6.4 |
+| 4 | 4.1 / 7.1 · 2.9 / 7.1 | 2.8 / 7.1 · 2.4 / 7.1 | 1.5 / 6.3 · 1.7 / 6.2 |
+| 16 | 2.0 / 6.7 · 1.8 / 7.0 | 1.9 / 6.6 · 1.8 / 6.7 | 0.9 / 6.0 · 1.1 / 6.0 |
+| 32 | 2.3 / 6.6 · 2.0 / 6.5 | 1.9 / 6.5 · 2.0 / 6.5 | 1.1 / 6.0 · 1.2 / 6.0 |
 
-Worker JVM CPU was 0.4–1.1 s per drain for every system, so the **database**, not the worker, is
-where the systems differ.
+Worker JVM CPU was 0.3–1.1 s per drain for every system in both runs, so the **database**, not the
+worker, is where the systems differ.
 
 ### Enqueue, jobs/s (8 producer threads, one transaction per job), median (range)
 
-| foleni | foleni-poll | db-scheduler |
-|---:|---:|---:|
-| 4,729 (246–7,211) | 10,513 (6,044–13,874) | 8,591 (6,802–10,638) |
+| Run | foleni | foleni-poll | db-scheduler |
+|---|---:|---:|---:|
+| 1 | 4,729 (246–7,211) | 10,513 (6,044–13,874) | 8,591 (6,802–10,638) |
+| 2 | 6,126 (5,283–7,118) | 11,509 (10,546–15,285) | 7,512 (4,024–9,194) |
 
 ### Latency, enqueue call to handler start (200 jobs/s for 15 s, 16 idle workers)
 
-| | p50 | p95 | p99 | max |
-|---|---:|---:|---:|---:|
-| **foleni** (NOTIFY) | **2.7 ms** | **4.4 ms** | 24.9 ms | 109.6 ms |
-| foleni-poll (100 ms poll) | 49.5 ms | 101.4 ms | 107.1 ms | 139.6 ms |
-| db-scheduler (100 ms poll) | 51.5 ms | 101.9 ms | 116.9 ms | 424.9 ms |
+| | Run | p50 | p95 | p99 | max |
+|---|---|---:|---:|---:|---:|
+| **foleni** (NOTIFY) | 1 | **2.7 ms** | **4.4 ms** | 24.9 ms | 109.6 ms |
+| | 2 | **2.9 ms** | **4.4 ms** | 17.3 ms | 110.3 ms |
+| foleni-poll (100 ms poll) | 1 | 49.5 ms | 101.4 ms | 107.1 ms | 139.6 ms |
+| | 2 | 49.3 ms | 101.6 ms | 107.0 ms | 127.9 ms |
+| db-scheduler (100 ms poll) | 1 | 51.5 ms | 101.9 ms | 116.9 ms | 424.9 ms |
+| | 2 | 51.2 ms | 100.0 ms | 104.7 ms | 110.9 ms |
 
-### Where the database time goes (mean execution time per statement)
+### Where the database time goes: mean execution time per statement (run 1 · run 2)
 
 | Statement | foleni | foleni-poll | db-scheduler |
 |---|---:|---:|---:|
-| Insert a job | 0.207 ms | 0.079 ms | 0.015 ms |
-| Finish a job (Foleni: UPDATE to succeeded. db-scheduler: DELETE) | 0.122 ms | 0.106 ms | 0.013 ms |
-| Claim (SKIP LOCKED CTE) | 0.140 ms | 0.141 ms | 0.069 ms |
+| Insert a job | 0.207 · 0.078 ms | 0.079 · 0.072 ms | 0.015 · 0.019 ms |
+| Finish a job (Foleni: UPDATE to succeeded. db-scheduler: DELETE) | 0.122 · 0.100 ms | 0.106 · 0.087 ms | 0.013 · 0.016 ms |
+| Claim (SKIP LOCKED CTE) | 0.140 · 0.125 ms | 0.141 · 0.124 ms | 0.069 · 0.075 ms |
 
-Foleni only, single run each: claim-only 40,556 jobs/s (foleni) and 79,910 (foleni-poll) with
-batches of 100. Complete-only 5,982 and 3,985 jobs/s.
+`pg_stat_statements` measures statement execution only. Work done at **commit** (WAL flush,
+delivering notifications) is not included.
 
-## What the numbers say
+Foleni only, one measurement per run: claim-only (batches of 100) 40,556 · 62,080 jobs/s (foleni)
+and 79,910 · 42,308 (foleni-poll). Complete-only 5,982 · 4,863 and 3,985 · 12,381 jobs/s. These
+swing by up to 3× between runs and support no conclusion.
 
-1. **Latency: Foleni with LISTEN/NOTIFY is ~19× faster at the median** (2.7 ms vs ~50 ms). Both
-   polling systems sit at about half their 100 ms poll interval, as expected.
-2. **Throughput under load: db-scheduler is faster.** At 16–32 threads it drained 1.4–2.3× more
-   jobs per second than Foleni, while using about half the database CPU per job.
-3. **NOTIFY has a real cost.** The trigger adds ~0.13 ms of database time per insert and halved
-   enqueue throughput (4,729 vs 10,513 jobs/s). This is the commit-time NOTIFY cost predicted in
-   Milestone 7, now measured.
-4. **Without NOTIFY, Foleni enqueues faster than db-scheduler** (10,513 vs 8,591 jobs/s), even
-   though each of its inserts costs more database time. Insert execution time is only part of an
-   enqueue: round trips and client-side work count too. Where db-scheduler spends the difference
-   was not investigated. (Its profile also shows one single-row `select` per job, 120,000 calls;
-   which step issues it was not checked.)
-5. **Foleni's per-statement database cost is several times db-scheduler's.** Measured causes:
+## What reproduced and what did not
+
+### Held up in both runs
+
+1. **Latency: Foleni with LISTEN/NOTIFY picks up jobs ~18–19× faster at the median** (2.7–2.9 ms
+   vs ~50 ms). Both polling systems sit at about half their 100 ms poll interval, as expected.
+2. **NOTIFY roughly halves Foleni's enqueue throughput** (4,729 vs 10,513 and 6,126 vs 11,509
+   jobs/s). The cost is **not** in the insert's execution time (see below), which points to the
+   work Postgres does at commit for notifying transactions, the cost predicted in Milestone 7.
+3. **Without NOTIFY, Foleni enqueues faster than db-scheduler** (10,513 vs 8,591 and 11,509 vs
+   7,512 jobs/s), even though each of its inserts costs more database time. Insert execution time
+   is only part of an enqueue: round trips and client-side work count too. Where db-scheduler spends
+   the difference was not investigated. (Its profile shows one single-row `select` per job,
+   120,000 calls; which step issues it was not checked.)
+4. **db-scheduler uses less database CPU per job**: about 1.6–2.2× less at 16–32 threads.
+5. **Each of Foleni's statements costs more database time** than its db-scheduler counterpart:
+   inserts ~4–5× (without NOTIFY), finishing a job ~5–9× (UPDATE vs DELETE), claiming ~1.7–2×.
+   Measured causes:
    - The regex `CHECK` constraints on `queue` and `job_type` are about **45% of an insert's
      execution time** (isolated experiment, 50,000 inserts: 0.053 ms with them, 0.029 ms without,
      +25% throughput). Postgres re-checks every `CHECK` on every `UPDATE` too, so claims and
      completions pay for them as well.
    - Foleni keeps finished jobs (`UPDATE` to `succeeded`, a full new row version) where
-     db-scheduler `DELETE`s them. WAL volume is only ~10–20% higher, so this is **not** the main
-     cause, contrary to the first hypothesis during this work.
+     db-scheduler `DELETE`s them. WAL volume is only ~10–20% higher in both runs, so this is
+     **not** the main cause, contrary to the first hypothesis during this work.
    - Other contributors (three partial indexes, `jsonb` parsing, UUIDv7 keys) are **not yet
      separately measured**.
-6. **Results are noisy.** Ranges are wide, and some medians are out of order (foleni at 4 threads
-   below foleni-poll; foleni at 32 threads below 16). One enqueue repetition fell to 246 jobs/s.
-   Likely causes on default settings: checkpoints (every 5 minutes) and autovacuum during runs.
-   **Not verified.** Treat differences under ~30% as inconclusive.
+6. **Single-threaded throughput is the same for all three** (1,286–1,573 jobs/s across both runs).
+   With one worker, round trips dominate, not database work.
+
+### Did not reproduce
+
+1. **The size of the throughput gap under load.** Run 1: db-scheduler drained 1.4–2.3× more jobs
+   per second than Foleni at 16–32 threads. Run 2: 1.08–1.19× at 32 threads, and at 16 threads
+   Foleni's median was higher (8,166 vs 6,762), although db-scheduler's range there (5,454–9,105)
+   overlaps Foleni's. **Supported conclusion:** db-scheduler is somewhat faster at draining under
+   load, by between ~10% and ~2× on this machine. Not more precise than that.
+2. **"The NOTIFY trigger adds ~0.13 ms per insert."** Run 1 measured 0.207 vs 0.079 ms. Run 2
+   measured 0.078 vs 0.072 ms. The run 1 figure looks like an outlier, and the claim is withdrawn.
+3. **db-scheduler's 425 ms maximum latency** in run 1. Run 2's maximum was 111 ms. Maxima from one
+   15-second window are not stable.
+4. **Run 1's out-of-order medians** (foleni at 4 threads below foleni-poll, foleni at 32 threads
+   below 16) did not appear in run 2.
+
+### Why the runs differ
+
+Ranges are wide in both runs, and one run 1 enqueue repetition fell to 246 jobs/s. Likely causes on
+default settings: checkpoints (every 5 minutes) and autovacuum during the runs, plus other activity
+on a laptop. **Not verified.** Treat differences under ~30%, and anything seen in only one run, as
+inconclusive.
 
 ## Corrections made while building this benchmark
 
@@ -157,11 +206,12 @@ Kept here because they change how to read any earlier number.
    core tests and the 3 crash tests still pass.
 3. **Invalid runs, discarded.** Testcontainers starts PostgreSQL with `fsync=off`. All runs before
    it was switched back on are discarded; none of their numbers appear above.
-4. **db-scheduler API updated after the run.** The results above were produced with
-   `SchedulerClient.schedule(TaskInstance, Instant)`, which db-scheduler 17.0.0 deprecates. The
-   harness now calls `schedule(TaskInstance, Instant, ScheduleOptions.WHEN_EXISTS_DO_NOTHING)`. With
-   random task IDs both insert the same row, and a smoke run shows the same SQL statements, but the
-   full benchmark has not been rerun since. db-scheduler's enqueue numbers may differ slightly.
+4. **db-scheduler API updated between runs 1 and 2.** Run 1 used
+   `SchedulerClient.schedule(TaskInstance, Instant)`, which db-scheduler 17.0.0 deprecates. Run 2
+   and the current harness use `schedule(TaskInstance, Instant, ScheduleOptions.WHEN_EXISTS_DO_NOTHING)`.
+   With random task IDs both insert the same row, and both runs show the same SQL statements in
+   db-scheduler's profile. Its enqueue medians (8,591 and 7,512 jobs/s) are within each other's
+   ranges.
 
 ## Recommended next steps
 
@@ -173,7 +223,8 @@ Kept here because they change how to read any earlier number.
 - **Batch completions**, as db-scheduler batches its picking. Completing several jobs in one
   `UPDATE … WHERE id = ANY(?)` would cut round trips at high concurrency. Ownership checks must stay
   per job.
-- **Rerun on a tuned, dedicated PostgreSQL server** before quoting absolute numbers.
+- **Rerun on a tuned, dedicated PostgreSQL server** before quoting absolute numbers, and run more
+  than twice: two laptop runs were enough to overturn two conclusions.
 
 ## Limitations
 
