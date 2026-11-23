@@ -1,8 +1,10 @@
 # JobLatch
 
-Durable background jobs for Java, on PostgreSQL alone.
+[![Build](https://github.com/Math3wsl3vi/joblatch/actions/workflows/build.yml/badge.svg?branch=prod)](https://github.com/Math3wsl3vi/joblatch/actions/workflows/build.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-*JobLatch* is Swahili for "queue".
+Background jobs for Java that commit in the same transaction as your data. PostgreSQL only: no
+Redis, no RabbitMQ, no second system to run.
 
 > **Status: 0.1.0-SNAPSHOT, not yet on Maven Central.** The design is complete and tested (122
 > automated tests, including multi-process crash tests), but the API may still change before 1.0.
@@ -38,7 +40,7 @@ second system to run, monitor or back up.
 
 ```java
 DataSource dataSource = ...;                       // a pooled DataSource, e.g. HikariCP
-JobLatchMigrations.migrate(dataSource);              // once, at deploy time
+JobLatchMigrations.migrate(dataSource);            // once, at deploy time
 
 // 1. Enqueue in the same transaction as your business write
 try (Connection conn = dataSource.getConnection()) {
