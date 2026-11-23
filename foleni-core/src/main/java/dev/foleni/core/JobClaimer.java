@@ -139,26 +139,17 @@ public final class JobClaimer {
             throws SQLException {
         validate(queue, workerId, batchSize, leaseDuration);
 
-        // We open the connection here, so we own the transaction: start, end, close.
+        // We open the connection here, so we own it. The claim is ONE statement, and in
+        // auto-commit mode one statement is one transaction: the SELECT ... FOR UPDATE and the
+        // UPDATE succeed or fail together, and commit before executeQuery returns. Ownership
+        // becomes real at that moment. A crash before it leaves the jobs available: nothing lost.
         try (Connection conn = dataSource.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                List<ClaimedJob> claimed = runClaim(conn, queue, workerId, batchSize, leaseDuration);
-                // The moment ownership becomes real. Before this commit, a crash would simply
-                // roll the claim back and the jobs would stay available. Nothing is lost.
-                conn.commit();
-                if (!claimed.isEmpty()) {
-                    log.debug("Worker {} claimed {} job(s) from queue {}", workerId, claimed.size(), queue);
-                }
-                return claimed;
-            } catch (SQLException | RuntimeException e) {
-                try {
-                    conn.rollback();
-                } catch (SQLException rollbackFailure) {
-                    e.addSuppressed(rollbackFailure);
-                }
-                throw e;
+            conn.setAutoCommit(true); // pools may hand out connections with it off
+            List<ClaimedJob> claimed = runClaim(conn, queue, workerId, batchSize, leaseDuration);
+            if (!claimed.isEmpty()) {
+                log.debug("Worker {} claimed {} job(s) from queue {}", workerId, claimed.size(), queue);
             }
+            return claimed;
         }
     }
 

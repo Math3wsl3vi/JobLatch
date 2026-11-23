@@ -118,18 +118,12 @@ public final class JobQueue {
         Objects.requireNonNull(dataSource, "dataSource");
         Objects.requireNonNull(job, "job");
 
-        // Here WE opened the connection, so WE own it: we start the transaction, end it,
-        // and close the connection. try-with-resources closes it even if an exception is thrown.
+        // Here WE opened the connection, so WE own it. A single INSERT in auto-commit mode is
+        // its own transaction: atomic, committed when executeQuery returns. An explicit
+        // BEGIN ... COMMIT would add a round trip to the database and no extra safety.
         try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
-            try {
-                UUID id = insert(connection, job);
-                connection.commit();
-                return id;
-            } catch (SQLException | RuntimeException e) {
-                rollbackQuietly(connection, e);
-                throw e;
-            }
+            connection.setAutoCommit(true); // pools may hand out connections with it off
+            return insert(connection, job);
         }
     }
 
@@ -181,18 +175,5 @@ public final class JobQueue {
                         + ", SQLState=" + original.getSQLState() + ")",
                 original.getSQLState(),
                 original.getErrorCode());
-    }
-
-    /**
-     * Rolls back, but never hides the original error. If the rollback itself fails (for
-     * example because the connection is dead), that failure is attached to the original
-     * exception as "suppressed" and the original is what gets thrown.
-     */
-    private static void rollbackQuietly(Connection connection, Exception original) {
-        try {
-            connection.rollback();
-        } catch (SQLException rollbackFailure) {
-            original.addSuppressed(rollbackFailure);
-        }
     }
 }
